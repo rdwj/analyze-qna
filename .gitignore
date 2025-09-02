@@ -1,9 +1,11 @@
 # cache
 __pycache__/
+.mypy_cache/
 
 # env
 env/
 .venv/
+venv/
 
 # logs
 logs/

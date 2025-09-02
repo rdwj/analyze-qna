@@ -1,6 +1,10 @@
 """
 This script analyzes a Q&A YAML file and generates a concise report.
-Usage: python analyze_qna.py <path_to_qna.yaml>
+Usage:
+  - python analyze_qna.py <path_to_qna.yaml>
+  - python analyze_qna.py --file <path_to_qna.yaml>
+  - python analyze_qna.py --taxonomy-root <taxonomy_root_dir>
+  - [Deprecated] python analyze_qna.py --data-dir <directory_with_yaml_files>
 
 It is recommended to use a venv with the following packages installed:
 - pyyaml
@@ -12,19 +16,22 @@ It is recommended to use a venv with the following packages installed:
 """
 import os
 import sys
+import argparse
 import yaml
 import tiktoken
-from mistral_common.protocol.instruct.messages import (
-    AssistantMessage,
-    UserMessage,
-    ToolMessage
-)
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from mistral_common.protocol.instruct.tool_calls import Function, Tool, ToolCall, FunctionCall
-from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from tabulate import tabulate
 from termcolor import colored
-from typing import List, Dict
+from typing import List
+
+# Optional Mistral tokenizer imports
+MISTRAL_AVAILABLE = False
+try:
+    from mistral_common.protocol.instruct.messages import UserMessage
+    from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+    from mistral_common.protocol.instruct.request import ChatCompletionRequest
+    MISTRAL_AVAILABLE = True
+except Exception:
+    MISTRAL_AVAILABLE = False
 
 # Magic constants
 TOKEN_COUNTER = "openai"
@@ -55,6 +62,8 @@ def count_tokens_openai(text: str, model_name: str = "o3-mini") -> int:
 def count_tokens_mistral(text: str, model_name="open-mixtral-8x22b") -> int:
     """Count the number of tokens in a text using Mistral's tokenizer."""
     try:
+        if not MISTRAL_AVAILABLE:
+            raise ImportError("mistral-common not available")
         tokenizer_v3 = MistralTokenizer.v3()
 
 
@@ -93,7 +102,7 @@ def count_tokens_mistral(text: str, model_name="open-mixtral-8x22b") -> int:
 def analyze_qna_file(file_path: str) -> None:
     """Analyzes a qna.yaml file and generates a concise report using the tabulate library with Mistral's tokenizer."""
     try:
-        with open(file_path, 'r') as file:
+        with open(file_path, 'r', encoding='utf-8') as file:
             content = yaml.safe_load(file)
     except FileNotFoundError:
         print(colored(f"Error: File not found at '{file_path}'", 'red', attrs=['bold']))
@@ -151,7 +160,7 @@ def analyze_qna_file(file_path: str) -> None:
                 status = f"Expected 3 Q&A pairs, found {len(questions_and_answers) if isinstance(questions_and_answers, list) else 0}"
                 status_color = 'red'
 
-        for j, qna_pair in enumerate(questions_and_answers):
+        for qna_pair in questions_and_answers:
             question = qna_pair.get('question')
             answer = qna_pair.get('answer')
 
@@ -189,13 +198,79 @@ def analyze_qna_file(file_path: str) -> None:
 
     print(colored("\nAnalysis complete.", 'green'))
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python analyze_qna.py <path_to_qna.yaml>")
+def analyze_qna_dir(dir_path: str) -> None:
+    """Find and analyze all .yaml/.yml files within a directory (recursively)."""
+    if not os.path.isdir(dir_path):
+        print(colored(f"Error: Directory not found at '{dir_path}'", 'red', attrs=['bold']))
         sys.exit(1)
 
-    file_path = sys.argv[1]
-    analyze_qna_file(file_path)
+    yaml_files: List[str] = []
+    for root, _dirs, files in os.walk(dir_path):
+        for name in files:
+            if name.lower().endswith((".yaml", ".yml")):
+                yaml_files.append(os.path.join(root, name))
+
+    if not yaml_files:
+        print(colored(f"No YAML files found in '{dir_path}'.", 'yellow'))
+        return
+
+    for file_path in sorted(yaml_files):
+        print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
+        analyze_qna_file(file_path)
+
+def analyze_taxonomy_root(root_path: str) -> None:
+    """Crawl a taxonomy tree and analyze files named exactly 'qna.yaml'."""
+    if not os.path.isdir(root_path):
+        print(colored(f"Error: Directory not found at '{root_path}'", 'red', attrs=['bold']))
+        sys.exit(1)
+
+    qna_files: List[str] = []
+    for current_root, _dirs, files in os.walk(root_path):
+        for name in files:
+            if name == "qna.yaml":
+                qna_files.append(os.path.join(current_root, name))
+
+    if not qna_files:
+        print(colored(f"No 'qna.yaml' files found under '{root_path}'.", 'yellow'))
+        return
+
+    for file_path in sorted(qna_files):
+        print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
+        analyze_qna_file(file_path)
+
+def main():
+    parser = argparse.ArgumentParser(description="Analyze Q&A YAML files and report token counts and structure quality.")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('-f', '--file', help='Path to a Q&A YAML file to analyze')
+    group.add_argument('-t', '--taxonomy-root', help="Root directory of taxonomy; analyze 'qna.yaml' files recursively")
+    group.add_argument('-d', '--data-dir', help='[Deprecated] Path to a directory containing YAML Q&A files (recursively)')
+    parser.add_argument('path', nargs='?', help='[Deprecated] Path to a YAML file or directory (for backward compatibility)')
+
+    args = parser.parse_args()
+
+    if args.file:
+        analyze_qna_file(args.file)
+        return
+
+    if args.taxonomy_root:
+        analyze_taxonomy_root(args.taxonomy_root)
+        return
+
+    if args.data_dir:
+        print(colored("Warning: --data-dir is deprecated. Prefer --taxonomy-root to analyze only 'qna.yaml' files.", 'yellow'))
+        analyze_qna_dir(args.data_dir)
+        return
+
+    if args.path:
+        if os.path.isdir(args.path):
+            analyze_qna_dir(args.path)
+        else:
+            analyze_qna_file(args.path)
+        return
+
+    parser.print_usage()
+    print("\nExamples:\n  python analyze_qna.py --file path/to/qna.yaml\n  python analyze_qna.py --taxonomy-root path/to/taxonomy\n  python analyze_qna.py --data-dir path/to/dir  # deprecated")
+    sys.exit(1)
 
 if __name__ == "__main__":
     main()

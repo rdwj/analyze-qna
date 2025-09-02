@@ -1,0 +1,20 @@
+{
+  "name": "analyze-qna",
+  "version": "0.0.1",
+  "description": "Analyze Q&A YAML files and report token counts and structure quality",
+  "bin": {
+    "analyze-qna": "bin/analyze-qna.js"
+  },
+  "keywords": ["qna", "yaml", "tokens", "analysis"],
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=16"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "requirements.txt",
+    "README.md"
+  ]
+}

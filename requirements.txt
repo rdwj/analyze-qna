@@ -1,0 +1,6 @@
+pyyaml
+tiktoken
+tabulate
+termcolor
+types-PyYAML
+types-tabulate
