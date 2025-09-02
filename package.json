@@ -1,6 +1,6 @@
 {
   "name": "analyze-qna",
-  "version": "0.0.2",
+  "version": "0.0.1",
   "description": "Analyze Q&A YAML files and report token counts and structure quality",
   "bin": {
     "analyze-qna": "bin/analyze-qna.js"
@@ -16,6 +16,15 @@
   "engines": {
     "node": ">=16"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rdwj/analyze-qna.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rdwj/analyze-qna/issues"
+  },
+  "homepage": "https://github.com/rdwj/analyze-qna#readme",
+  "author": "Wes Jackson <wjackson@redhat.com>",
   "files": [
     "bin/",
     "src/",
