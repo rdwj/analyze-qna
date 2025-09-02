@@ -15,3 +15,14 @@ data/
 
 # models
 models/
+
+# tarballs
+*.tar.gz
+*.tgz
+*.tar.xz
+*.tar.bz2
+*.tar.lzma
+*.tar.zstd
+*.tar.br
+*.tar.z
+*.tar.lz

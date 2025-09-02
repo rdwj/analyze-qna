@@ -1,6 +1,6 @@
 {
   "name": "analyze-qna",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Analyze Q&A YAML files and report token counts and structure quality",
   "bin": {
     "analyze-qna": "bin/analyze-qna.js"
