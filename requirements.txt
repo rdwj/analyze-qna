@@ -4,3 +4,4 @@ tabulate
 termcolor
 types-PyYAML
 types-tabulate
+jsonschema

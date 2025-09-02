@@ -18,6 +18,7 @@ import sys
 import argparse
 import json
 import yaml
+import jsonschema
 import tiktoken
 from tabulate import tabulate
 from termcolor import colored
@@ -221,14 +222,44 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
         print(colored(f"Error parsing YAML file '{file_path}': {e}", 'red', attrs=['bold']))
         sys.exit(1)
 
-    # Schema validation warnings
-    missing_keys = []
-    for key in ["seed_examples", "task_description", "created_by"]:
-        if key not in content:
-            missing_keys.append(key)
-    if missing_keys:
-        for key in missing_keys:
-            print(colored(f"Schema: missing required key '{key}'", 'red', attrs=['bold']))
+    # Schema validation (InstructLab v3):
+    # Detect knowledge datasets by path; validate against bundled JSON Schema when possible.
+    normalized_path_info = file_path.replace('\\', '/')
+    is_knowledge_path = '/knowledge/' in normalized_path_info
+    schema_errors: List[str] = []
+    if is_knowledge_path:
+        # Load bundled knowledge schema
+        schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', 'knowledge.json')
+        try:
+            with open(schema_path, 'r', encoding='utf-8') as sf:
+                knowledge_schema = json.load(sf)
+            jsonschema.validate(instance=content, schema=knowledge_schema)
+        except FileNotFoundError:
+            print(colored("Info: Bundled knowledge schema not found; skipping JSON Schema validation.", 'yellow'))
+        except jsonschema.exceptions.ValidationError as ve:
+            # Build helpful message with property path and schema hints
+            prop_path = ".".join([str(p) for p in list(ve.path)])
+            # Try to extract property descriptor if available
+            prop_desc = None
+            try:
+                # Navigate schema to property if possible
+                schema_ctx = knowledge_schema
+                for p in ve.path:
+                    if isinstance(p, str) and 'properties' in schema_ctx and p in schema_ctx['properties']:
+                        schema_ctx = schema_ctx['properties'][p]
+                    else:
+                        break
+                prop_desc = schema_ctx.get('description') if isinstance(schema_ctx, dict) else None
+            except Exception:
+                prop_desc = None
+            msg = f"Schema validation error at '{prop_path or '<root>'}': {ve.message}"
+            if prop_desc:
+                msg += f" | hint: {prop_desc}"
+            schema_errors.append(msg)
+        except Exception as e:
+            print(colored(f"Info: Schema validation skipped due to error: {e}", 'yellow'))
+    else:
+        print(colored("Info: Non-knowledge path detected; applying general QnA checks only (see InstructLab schema v3).", 'yellow'))
 
     if 'seed_examples' not in content:
         print(colored("Warning: No 'seed_examples' section found in the YAML file.", 'yellow'))
@@ -381,6 +412,11 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
         for w in extra_warnings:
             print(colored(f"- {w}", 'yellow'))
 
+    if schema_errors:
+        print(colored("\nSchema Validation:", 'red', attrs=['bold']))
+        for e in schema_errors:
+            print(colored(f"- {e}", 'red'))
+
     if yaml_lint:
         lint = lint_yaml_file(file_path)
         lint_notes: List[str] = []
@@ -477,6 +513,33 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
             "examples": []
         }
 
+    # Schema v3 validation (knowledge) for AI output as well
+    schema_info = {}
+    try:
+        normalized_path_info = file_path.replace('\\', '/')
+        is_knowledge_path = '/knowledge/' in normalized_path_info
+        if is_knowledge_path:
+            schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', 'knowledge.json')
+            with open(schema_path, 'r', encoding='utf-8') as sf:
+                knowledge_schema = json.load(sf)
+            jsonschema.validate(instance=content, schema=knowledge_schema)
+            schema_info = {"validated_against": "v3/knowledge.json", "errors": []}
+        else:
+            schema_info = {"validated_against": None, "errors": []}
+    except jsonschema.exceptions.ValidationError as ve:
+        prop_path = ".".join([str(p) for p in list(ve.path)])
+        schema_info = {
+            "validated_against": "v3/knowledge.json",
+            "errors": [
+                {
+                    "path": prop_path or "<root>",
+                    "message": ve.message
+                }
+            ]
+        }
+    except Exception:
+        schema_info = {"validated_against": None, "errors": []}
+
     seed_examples = content.get('seed_examples', [])
     if not isinstance(seed_examples, list):
         return {
@@ -491,10 +554,11 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
     num_contexts = len(seed_examples)
     num_examples_ok = 5 <= num_contexts <= 15
     errors: List[str] = []
-    # Schema keys validation
-    for key in ["task_description", "created_by"]:
-        if key not in content:
-            errors.append(f"Schema: missing required key '{key}'")
+    # Schema keys validation (InstructLab v3): require created_by for knowledge QnA
+    normalized_path_info = file_path.replace('\\', '/')
+    is_knowledge_path = '/knowledge/' in normalized_path_info
+    if is_knowledge_path and 'created_by' not in content:
+        errors.append("Schema: missing required key 'created_by'")
     if not num_examples_ok:
         errors.append(f"Expected 5-15 seed examples, found {num_contexts}")
 
@@ -628,7 +692,8 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
             "num_examples_recommended": {"min": 5, "max": 15, "ok": num_examples_ok}
         },
         "examples": examples_analysis,
-        "diversity": {}
+        "diversity": {},
+        "schema": schema_info
     }
 
     # Diversity heuristics (simple): detect presence of tables, lists, narrative, equations/theorems
