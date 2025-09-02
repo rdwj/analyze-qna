@@ -1,7 +1,12 @@
-pyyaml
-tiktoken
-tabulate
-termcolor
+# Core
+pyyaml>=6.0.2
+jsonschema>=4.25.1
+
+# Tokenization and reporting
+tiktoken>=0.11.0
+tabulate>=0.9.0
+termcolor>=3.1.0
+
+# Type stubs for better editor/linting support (optional at runtime)
 types-PyYAML
 types-tabulate
-jsonschema

@@ -95,6 +95,23 @@ Human-readable table per file with per-pair breakout (Q/A tokens, totals, and wh
 
 When `--yaml-lint` is enabled, a YAML Lint section lists any formatting issues (trailing whitespace, missing final newline, CRLF, tabs/mixed indentation, duplicate keys).
 
+## Schema validation (InstructLab v3)
+
+- Validates knowledge QnA files against a bundled InstructLab v3 JSON Schema when the file path contains `/knowledge/` (e.g., when analyzing a taxonomy tree).
+- Human mode prints a "Schema Validation" section with the failing path and a short hint from the schema when available.
+- AI mode adds a `schema` block in the JSON output with `validated_against` and detailed errors.
+
+Bundled schemas (offline):
+- `src/instructlab/schema/v3/knowledge.json`
+- Upstream references: InstructLab schemas v3 and taxonomy layout
+  - https://github.com/instructlab/schema/tree/main/src/instructlab/schema/v3
+  - https://github.com/instructlab/taxonomy
+
+Notes:
+- Requires `jsonschema` (already in `requirements.txt`); the Node wrapper installs it automatically.
+- If `schema.validated_against` is `null`, validation was skipped (non-knowledge path or schema not found).
+- Currently validates knowledge QnA. Other dataset types (e.g., compositional, foundational) receive lint checks; schema validation for those types can be added later.
+
 ## Contributing
 
 Contributions are welcome! Please read the guidelines in [`CONTRIBUTING.md`](https://github.com/rdwj/analyze-qna/blob/main/CONTRIBUTING.md) and open an issue or pull request on GitHub.
