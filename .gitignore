@@ -1,0 +1,15 @@
+# cache
+__pycache__/
+
+# env
+env/
+.venv/
+
+# logs
+logs/
+
+# data
+data/
+
+# models
+models/
