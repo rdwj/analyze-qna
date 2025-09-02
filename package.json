@@ -29,6 +29,7 @@
     "bin/",
     "src/",
     "requirements.txt",
-    "README.md"
+    "README.md",
+    "config.example.json"
   ]
 }

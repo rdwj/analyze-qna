@@ -1,0 +1,11 @@
+{
+  "context_min": 300,
+  "context_max": 500,
+  "pair_min": 200,
+  "pair_max": 300,
+  "section_max": 750,
+  "examples_min": 5,
+  "examples_max": 15,
+  "line_match_min_length": 20,
+  "line_match_fraction_min": 0.8
+}
