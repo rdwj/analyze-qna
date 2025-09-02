@@ -44,11 +44,12 @@ function findPython() {
     ...process.env,
     VIRTUAL_ENV: venvDir,
     PATH: `${venvBin}${path.delimiter}${process.env.PATH}`,
+    ANALYZE_QNA_ROOT: rootDir,
   };
 
-  // Install requirements
-  run(venvPython, ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pip'], { env });
-  run(venvPython, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', path.join(rootDir, 'requirements.txt')], { env });
+  // Install requirements (quiet)
+  run(venvPython, ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', '-q', 'pip'], { env, stdio: 'ignore' });
+  run(venvPython, ['-m', 'pip', 'install', '--disable-pip-version-check', '-q', '-r', path.join(rootDir, 'requirements.txt')], { env, stdio: 'ignore' });
 
   // Forward args to Python CLI
   const args = process.argv.slice(2);

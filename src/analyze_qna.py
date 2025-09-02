@@ -19,6 +19,11 @@ import argparse
 import json
 import yaml
 import jsonschema
+import json as _json
+try:
+    from importlib import resources as _iresources
+except Exception:
+    _iresources = None
 import tiktoken
 from tabulate import tabulate
 from termcolor import colored
@@ -132,6 +137,37 @@ def compute_context_source_checks(context: str, source_text: str, thresholds: Di
         "ok": bool(normalized_substring or frac_ok),
     }
 
+def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Load the bundled v3 knowledge schema via importlib.resources, with filesystem fallback.
+
+    Returns: (schema_dict_or_none, source_hint)
+    """
+    # Try package resource first
+    if _iresources is not None:
+        try:
+            pkg = 'instructlab.schema.v3'
+            data = _iresources.files(pkg).joinpath('knowledge.json').read_text(encoding='utf-8')  # type: ignore[attr-defined]
+            return _json.loads(data), 'package'
+        except Exception:
+            pass
+    # Fallback 1: relative to this file
+    schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', 'knowledge.json')
+    try:
+        with open(schema_path, 'r', encoding='utf-8') as sf:
+            return json.load(sf), schema_path
+    except Exception:
+        pass
+    # Fallback 2: use ANALYZE_QNA_ROOT env (set by Node wrapper) to locate schema in installed package layout
+    root_dir = os.environ.get('ANALYZE_QNA_ROOT')
+    if root_dir:
+        alt_path = os.path.join(root_dir, 'src', 'instructlab', 'schema', 'v3', 'knowledge.json')
+        try:
+            with open(alt_path, 'r', encoding='utf-8') as sf:
+                return json.load(sf), alt_path
+        except Exception:
+            pass
+    return None, None
+
 def lint_yaml_file(file_path: str) -> Dict[str, Any]:
     """Perform simple YAML file lint checks (formatting + duplicate keys)."""
     results: Dict[str, Any] = {
@@ -228,14 +264,12 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
     is_knowledge_path = '/knowledge/' in normalized_path_info
     schema_errors: List[str] = []
     if is_knowledge_path:
-        # Load bundled knowledge schema
-        schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', 'knowledge.json')
+        knowledge_schema, schema_src = _load_knowledge_schema()
         try:
-            with open(schema_path, 'r', encoding='utf-8') as sf:
-                knowledge_schema = json.load(sf)
-            jsonschema.validate(instance=content, schema=knowledge_schema)
-        except FileNotFoundError:
-            print(colored("Info: Bundled knowledge schema not found; skipping JSON Schema validation.", 'yellow'))
+            if knowledge_schema is None:
+                print(colored("Info: Bundled knowledge schema not found; skipping JSON Schema validation.", 'yellow'))
+            else:
+                jsonschema.validate(instance=content, schema=knowledge_schema)
         except jsonschema.exceptions.ValidationError as ve:
             # Build helpful message with property path and schema hints
             prop_path = ".".join([str(p) for p in list(ve.path)])
@@ -243,7 +277,7 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
             prop_desc = None
             try:
                 # Navigate schema to property if possible
-                schema_ctx = knowledge_schema
+                schema_ctx = knowledge_schema  # type: ignore[assignment]
                 for p in ve.path:
                     if isinstance(p, str) and 'properties' in schema_ctx and p in schema_ctx['properties']:
                         schema_ctx = schema_ctx['properties'][p]
@@ -519,17 +553,19 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
         normalized_path_info = file_path.replace('\\', '/')
         is_knowledge_path = '/knowledge/' in normalized_path_info
         if is_knowledge_path:
-            schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', 'knowledge.json')
-            with open(schema_path, 'r', encoding='utf-8') as sf:
-                knowledge_schema = json.load(sf)
-            jsonschema.validate(instance=content, schema=knowledge_schema)
-            schema_info = {"validated_against": "v3/knowledge.json", "errors": []}
+            knowledge_schema, schema_src = _load_knowledge_schema()
+            if knowledge_schema is not None:
+                jsonschema.validate(instance=content, schema=knowledge_schema)
+                schema_info = {"validated_against": "v3/knowledge.json", "source": schema_src, "errors": []}
+            else:
+                schema_info = {"validated_against": None, "source": None, "errors": []}
         else:
-            schema_info = {"validated_against": None, "errors": []}
+            schema_info = {"validated_against": None, "source": None, "errors": []}
     except jsonschema.exceptions.ValidationError as ve:
         prop_path = ".".join([str(p) for p in list(ve.path)])
         schema_info = {
             "validated_against": "v3/knowledge.json",
+            "source": None,
             "errors": [
                 {
                     "path": prop_path or "<root>",
@@ -538,7 +574,7 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
             ]
         }
     except Exception:
-        schema_info = {"validated_against": None, "errors": []}
+        schema_info = {"validated_against": None, "source": None, "errors": []}
 
     seed_examples = content.get('seed_examples', [])
     if not isinstance(seed_examples, list):
