@@ -1,6 +1,6 @@
 # analyze-qna
 
-CLI to analyze Q&A YAML files and report token counts and structure quality.
+CLI to analyze InstructLab `qna.yaml` files and report token counts, structure quality, and formatting lint. This tool is intended to help authors ensure their datasets pass InstructLab validations before running `ilab taxonomy diff`.
 
 <p align="center">
   <a href="https://github.com/rdwj/analyze-qna">GitHub Repository</a> ·
@@ -22,6 +22,7 @@ CLI to analyze Q&A YAML files and report token counts and structure quality.
 - **Directory crawl**: `--taxonomy-root` crawls a tree and analyzes files named `qna.yaml`.
 - **Readable report**: Pretty table output via `tabulate` with per-pair breakout.
 - **Agent mode**: `--ai` emits structured JSON for programmatic use.
+- **YAML lint**: `--yaml-lint` checks trailing whitespace, missing final newline, tabs/mixed indentation, CRLF endings, and duplicate keys.
 
 ## Installation
 
@@ -40,11 +41,14 @@ CLI to analyze Q&A YAML files and report token counts and structure quality.
   - `python src/analyze_qna.py --file path/to/qna.yaml --ai --source-doc path/to/source.txt`
   - `python src/analyze_qna.py --taxonomy-root path/to/taxonomy`
   - `python src/analyze_qna.py --taxonomy-root path/to/taxonomy --ai`
+  - `python src/analyze_qna.py --file path/to/qna.yaml --yaml-lint`
+  - `python src/analyze_qna.py --taxonomy-root path/to/taxonomy --yaml-lint`
   - `python src/analyze_qna.py --data-dir path/to/dir` (deprecated)
 
 - Via npx (after publishing or via npm link)
   - `npx analyze-qna --file path/to/qna.yaml`
   - `npx analyze-qna --taxonomy-root path/to/taxonomy`
+  - `npx analyze-qna --file path/to/qna.yaml --yaml-lint`
 
 ## Configuration and thresholds
 
@@ -89,6 +93,8 @@ You can provide a JSON config or override values via CLI.
 
 Human-readable table per file with per-pair breakout (Q/A tokens, totals, and whether they appear in context). A Notes section lists warnings (extra pairs ignored, out-of-range pairs, missing Q/A in context, context not matching source document).
 
+When `--yaml-lint` is enabled, a YAML Lint section lists any formatting issues (trailing whitespace, missing final newline, CRLF, tabs/mixed indentation, duplicate keys).
+
 ## Contributing
 
 Contributions are welcome! Please read the guidelines in [`CONTRIBUTING.md`](https://github.com/rdwj/analyze-qna/blob/main/CONTRIBUTING.md) and open an issue or pull request on GitHub.
@@ -125,3 +131,7 @@ Contributions are welcome! Please read the guidelines in [`CONTRIBUTING.md`](htt
 ## License
 
 MIT. See `LICENSE` for details.
+
+## Acknowledgement
+
+This utility is designed for use with InstructLab `qna.yaml` datasets and aims to mirror important validations to reduce failures during `ilab taxonomy diff`. InstructLab is an open-source project; please consult its documentation for canonical requirements and behavior.

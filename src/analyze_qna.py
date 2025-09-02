@@ -50,6 +50,7 @@ DEFAULT_THRESHOLDS: Dict[str, Any] = {
     "context_max": 500,
     "pair_min": 200,
     "pair_max": 300,
+    "pair_words_max": 2300,
     "section_max": 750,
     "examples_min": 5,
     "examples_max": 15,
@@ -130,7 +131,84 @@ def compute_context_source_checks(context: str, source_text: str, thresholds: Di
         "ok": bool(normalized_substring or frac_ok),
     }
 
-def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thresholds: Optional[Dict[str, Any]] = None) -> None:
+def lint_yaml_file(file_path: str) -> Dict[str, Any]:
+    """Perform simple YAML file lint checks (formatting + duplicate keys)."""
+    results: Dict[str, Any] = {
+        "trailing_whitespace_lines": [],
+        "missing_final_newline": False,
+        "has_tabs": False,
+        "mixed_indentation": False,
+        "has_crlf": False,
+        "duplicate_keys": [],
+    }
+
+    # Read raw bytes/text to detect line endings and whitespace
+    with open(file_path, 'rb') as fb:
+        raw = fb.read()
+    text = raw.decode('utf-8', errors='replace')
+
+    lines = text.splitlines(keepends=True)
+    saw_space_indent = False
+    saw_tab_indent = False
+    for idx, line in enumerate(lines, start=1):
+        if line.endswith('\r\n'):
+            results["has_crlf"] = True
+        # Trailing whitespace before newline
+        stripped_nl = line.rstrip('\r\n')
+        if len(stripped_nl) > 0 and stripped_nl.endswith((' ', '\t')):
+            results["trailing_whitespace_lines"].append(idx)
+        # Indentation type detection
+        leading = len(line) - len(line.lstrip(' \t'))
+        if leading > 0:
+            if line[:leading].find('\t') != -1:
+                saw_tab_indent = True
+            if line[:leading].find(' ') != -1:
+                saw_space_indent = True
+
+    if len(lines) > 0 and not (lines[-1].endswith('\n') or lines[-1].endswith('\r\n')):
+        results["missing_final_newline"] = True
+    results["has_tabs"] = any('\t' in ln for ln in lines)
+    results["mixed_indentation"] = saw_space_indent and saw_tab_indent
+
+    # Duplicate keys using a custom loader
+    class DuplicateKeyLoader(yaml.SafeLoader):
+        def __init__(self, stream):
+            super().__init__(stream)
+            self.duplicate_keys: List[str] = []
+
+        def construct_mapping(self, node, deep=False):  # type: ignore[override]
+            mapping = {}
+            for key_node, value_node in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key in mapping:
+                    try:
+                        self.duplicate_keys.append(str(key))
+                    except Exception:
+                        self.duplicate_keys.append("<unprintable>")
+                value = self.construct_object(value_node, deep=deep)
+                mapping[key] = value
+            return mapping
+
+    DuplicateKeyLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        DuplicateKeyLoader.construct_mapping,
+    )
+
+    try:
+        loader = DuplicateKeyLoader(text)
+        try:
+            loader.get_single_data()
+        finally:
+            loader.dispose()
+        results["duplicate_keys"] = loader.duplicate_keys
+    except Exception:
+        # If parsing fails here, duplicate detection is moot; parsing errors handled elsewhere
+        pass
+
+    return results
+
+
+def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thresholds: Optional[Dict[str, Any]] = None, yaml_lint: bool = False) -> None:
     """Analyze a qna.yaml file and generate a concise human-readable report."""
     thresholds = thresholds or DEFAULT_THRESHOLDS
     try:
@@ -142,6 +220,15 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
     except yaml.YAMLError as e:
         print(colored(f"Error parsing YAML file '{file_path}': {e}", 'red', attrs=['bold']))
         sys.exit(1)
+
+    # Schema validation warnings
+    missing_keys = []
+    for key in ["seed_examples", "task_description", "created_by"]:
+        if key not in content:
+            missing_keys.append(key)
+    if missing_keys:
+        for key in missing_keys:
+            print(colored(f"Schema: missing required key '{key}'", 'red', attrs=['bold']))
 
     if 'seed_examples' not in content:
         print(colored("Warning: No 'seed_examples' section found in the YAML file.", 'yellow'))
@@ -231,6 +318,16 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
                 status = f"Pair tokens ~{(thresholds['pair_min']+thresholds['pair_max'])//2} recommended; got {pair_total}"
                 status_color = 'yellow'
 
+            # Word-limit validation (~2300 words default) for Q+A combined
+            q_words = len(question.split())
+            a_words = len(answer.split())
+            pair_words_total = q_words + a_words
+            if pair_words_total > thresholds["pair_words_max"]:
+                extra_warnings.append(
+                    f"Example {i+1}: Pair words {pair_words_total} exceed max {thresholds['pair_words_max']}"
+                )
+                status_color = 'red'
+
             # Ensure Q and A are present in context (loose check)
             nq = normalize_text(question)
             na = normalize_text(answer)
@@ -284,9 +381,29 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
         for w in extra_warnings:
             print(colored(f"- {w}", 'yellow'))
 
+    if yaml_lint:
+        lint = lint_yaml_file(file_path)
+        lint_notes: List[str] = []
+        if lint["missing_final_newline"]:
+            lint_notes.append("Missing final newline at end of file")
+        if lint["trailing_whitespace_lines"]:
+            lint_notes.append(f"Trailing whitespace on lines: {lint['trailing_whitespace_lines'][:10]}{'...' if len(lint['trailing_whitespace_lines'])>10 else ''}")
+        if lint["has_crlf"]:
+            lint_notes.append("CRLF line endings detected; prefer LF")
+        if lint["mixed_indentation"]:
+            lint_notes.append("Mixed indentation (tabs and spaces) detected")
+        elif lint["has_tabs"]:
+            lint_notes.append("Tab characters present; prefer spaces for YAML indentation")
+        if lint["duplicate_keys"]:
+            lint_notes.append(f"Duplicate YAML keys detected (first few): {list(dict.fromkeys(lint['duplicate_keys']))[:10]}")
+        if lint_notes:
+            print(colored("\nYAML Lint:", 'magenta', attrs=['bold']))
+            for n in lint_notes:
+                print(colored(f"- {n}", 'magenta'))
+
     print(colored("\nAnalysis complete.", 'green'))
 
-def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None) -> None:
+def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> None:
     """Find and analyze all .yaml/.yml files within a directory (recursively)."""
     if not os.path.isdir(dir_path):
         print(colored(f"Error: Directory not found at '{dir_path}'", 'red', attrs=['bold']))
@@ -304,9 +421,9 @@ def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, 
 
     for file_path in sorted(yaml_files):
         print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
-        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds)
+        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint)
 
-def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None) -> None:
+def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> None:
     """Crawl a taxonomy tree and analyze files named exactly 'qna.yaml'."""
     if not os.path.isdir(root_path):
         print(colored(f"Error: Directory not found at '{root_path}'", 'red', attrs=['bold']))
@@ -324,9 +441,9 @@ def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] =
 
     for file_path in sorted(qna_files):
         print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
-        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds)
+        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint)
 
-def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None) -> dict:
+def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> dict:
     """Analyze a qna.yaml file and return a machine-readable JSON-ready structure."""
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
@@ -374,6 +491,10 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None) -
     num_contexts = len(seed_examples)
     num_examples_ok = 5 <= num_contexts <= 15
     errors: List[str] = []
+    # Schema keys validation
+    for key in ["task_description", "created_by"]:
+        if key not in content:
+            errors.append(f"Schema: missing required key '{key}'")
     if not num_examples_ok:
         errors.append(f"Expected 5-15 seed examples, found {num_contexts}")
 
@@ -454,6 +575,11 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None) -
                 if normalized_source is not None:
                     context_in_source = normalized_context in normalized_source
 
+                # Word-limit validation (~2300 words default) for Q+A combined
+                q_words = len(question.split())
+                a_words = len(answer.split())
+                pair_words_total = q_words + a_words
+
                 pairs_details.append({
                     "pair_index": idx,
                     "question_tokens": question_tokens,
@@ -463,7 +589,8 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None) -
                         "pair_tokens_recommended_ok": pair_ok,
                         "question_in_context": q_in_ctx,
                         "answer_in_context": a_in_ctx,
-                        "context_in_source": context_in_source
+                        "context_in_source": context_in_source,
+                        "pair_words_total": pair_words_total
                     }
                 })
 
@@ -525,9 +652,12 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None) -
     except Exception:
         pass
 
+    if yaml_lint:
+        result["yaml_lint"] = lint_yaml_file(file_path)
+
     return result
 
-def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None) -> List[dict]:
+def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> List[dict]:
     if not os.path.isdir(dir_path):
         return [{
             "file": dir_path,
@@ -544,9 +674,9 @@ def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None) -> 
             if name.lower().endswith((".yaml", ".yml")):
                 yaml_files.append(os.path.join(root, name))
 
-    return [analyze_qna_file_ai(p, source_doc_text) for p in sorted(yaml_files)]
+    return [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint) for p in sorted(yaml_files)]
 
-def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = None) -> List[dict]:
+def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> List[dict]:
     if not os.path.isdir(root_path):
         return [{
             "file": root_path,
@@ -563,7 +693,7 @@ def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = No
             if name == "qna.yaml":
                 qna_files.append(os.path.join(current_root, name))
 
-    return [analyze_qna_file_ai(p, source_doc_text) for p in sorted(qna_files)]
+    return [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint) for p in sorted(qna_files)]
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze Q&A YAML files and report token counts and structure quality.")
@@ -573,6 +703,7 @@ def main():
     group.add_argument('-d', '--data-dir', help='[Deprecated] Path to a directory containing YAML Q&A files (recursively)')
     parser.add_argument('--ai', action='store_true', help='Output machine-readable JSON for agents')
     parser.add_argument('--source-doc', help='Path to source document text to verify context inclusion')
+    parser.add_argument('--yaml-lint', action='store_true', help='Enable YAML formatting lint (trailing spaces, newline, tabs, CRLF, duplicate keys)')
     # Config/threshold overrides
     parser.add_argument('--config', help='Path to JSON file with threshold overrides')
     parser.add_argument('--context-range', help='Context token range as min,max (default 300,500)')
@@ -595,9 +726,9 @@ def main():
             except Exception as e:
                 print(colored(f"Warning: could not read --source-doc: {e}", 'yellow'))
         if args.ai:
-            print(json.dumps(analyze_qna_file_ai(args.file, source_text), indent=2))
+            print(json.dumps(analyze_qna_file_ai(args.file, source_text, yaml_lint=args.yaml_lint), indent=2))
         else:
-            analyze_qna_file(args.file, source_text, thresholds=thresholds)
+            analyze_qna_file(args.file, source_text, thresholds=thresholds, yaml_lint=args.yaml_lint)
         return
 
     if args.taxonomy_root:
@@ -609,30 +740,30 @@ def main():
             except Exception as e:
                 print(colored(f"Warning: could not read --source-doc: {e}", 'yellow'))
         if args.ai:
-            print(json.dumps(analyze_taxonomy_root_ai(args.taxonomy_root, source_text), indent=2))
+            print(json.dumps(analyze_taxonomy_root_ai(args.taxonomy_root, source_text, yaml_lint=args.yaml_lint), indent=2))
         else:
-            analyze_taxonomy_root(args.taxonomy_root, thresholds=thresholds, source_doc_text=source_text)
+            analyze_taxonomy_root(args.taxonomy_root, thresholds=thresholds, source_doc_text=source_text, yaml_lint=args.yaml_lint)
         return
 
     if args.data_dir:
         print(colored("Warning: --data-dir is deprecated. Prefer --taxonomy-root to analyze only 'qna.yaml' files.", 'yellow'))
         if args.ai:
-            print(json.dumps(analyze_qna_dir_ai(args.data_dir), indent=2))
+            print(json.dumps(analyze_qna_dir_ai(args.data_dir, yaml_lint=args.yaml_lint), indent=2))
         else:
-            analyze_qna_dir(args.data_dir, thresholds=thresholds)
+            analyze_qna_dir(args.data_dir, thresholds=thresholds, yaml_lint=args.yaml_lint)
         return
 
     if args.path:
         if os.path.isdir(args.path):
             if args.ai:
-                print(json.dumps(analyze_qna_dir_ai(args.path), indent=2))
+                print(json.dumps(analyze_qna_dir_ai(args.path, yaml_lint=args.yaml_lint), indent=2))
             else:
-                analyze_qna_dir(args.path, thresholds=thresholds)
+                analyze_qna_dir(args.path, thresholds=thresholds, yaml_lint=args.yaml_lint)
         else:
             if args.ai:
-                print(json.dumps(analyze_qna_file_ai(args.path), indent=2))
+                print(json.dumps(analyze_qna_file_ai(args.path, yaml_lint=args.yaml_lint), indent=2))
             else:
-                analyze_qna_file(args.path, thresholds=thresholds)
+                analyze_qna_file(args.path, thresholds=thresholds, yaml_lint=args.yaml_lint)
         return
 
     parser.print_usage()

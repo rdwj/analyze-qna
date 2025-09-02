@@ -3,6 +3,7 @@
   "context_max": 500,
   "pair_min": 200,
   "pair_max": 300,
+  "pair_words_max": 2300,
   "section_max": 750,
   "examples_min": 5,
   "examples_max": 15,
