@@ -137,36 +137,97 @@ def compute_context_source_checks(context: str, source_text: str, thresholds: Di
         "ok": bool(normalized_substring or frac_ok),
     }
 
-def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Load the bundled v3 knowledge schema via importlib.resources, with filesystem fallback.
+def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str], Dict[str, Any], List[str]]:
+    """Load the bundled v3 knowledge schema via importlib.resources, with filesystem fallbacks.
 
-    Returns: (schema_dict_or_none, source_hint)
+    Returns: (schema_dict_or_none, source_hint, attempts)
+    attempts lists the locations tried with basic status for debugging.
     """
-    # Try package resource first
-    if _iresources is not None:
+    attempts: List[str] = []
+    # Helper to load sibling version.json for store
+    def _load_version_for(base_file: str) -> Dict[str, Any]:
         try:
-            pkg = 'instructlab.schema.v3'
-            data = _iresources.files(pkg).joinpath('knowledge.json').read_text(encoding='utf-8')  # type: ignore[attr-defined]
-            return _json.loads(data), 'package'
+            vpath = os.path.join(os.path.dirname(base_file), 'version.json')
+            with open(vpath, 'r', encoding='utf-8') as vf:
+                return json.load(vf)
         except Exception:
-            pass
+            return {}
+    
+    # Helper to inline the version.json reference in the schema
+    def _inline_version_ref(schema: Dict[str, Any], version_schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace $ref to ./version.json with the actual schema content."""
+        if '$ref' in schema and schema['$ref'] == './version.json':
+            # Merge version schema properties into the main schema
+            result = dict(schema)
+            del result['$ref']
+            # Merge required and properties from version schema
+            if 'required' in version_schema:
+                existing_required = result.get('required', [])
+                result['required'] = list(set(existing_required + version_schema['required']))
+            if 'properties' in version_schema:
+                existing_props = result.get('properties', {})
+                existing_props.update(version_schema['properties'])
+                result['properties'] = existing_props
+            return result
+        return schema
+
     # Fallback 1: relative to this file
     schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', 'knowledge.json')
     try:
+        attempts.append(f'file: {schema_path}')
         with open(schema_path, 'r', encoding='utf-8') as sf:
-            return json.load(sf), schema_path
+            schema = json.load(sf)
+        store_version = _load_version_for(schema_path)
+        # Inline the version reference to avoid resolution issues
+        schema = _inline_version_ref(schema, store_version)
+        base_uri = pathlib.Path(schema_path).resolve().as_uri()
+        return schema, schema_path, base_uri, store_version, attempts
     except Exception:
-        pass
+        attempts.append('file: miss')
     # Fallback 2: use ANALYZE_QNA_ROOT env (set by Node wrapper) to locate schema in installed package layout
     root_dir = os.environ.get('ANALYZE_QNA_ROOT')
     if root_dir:
         alt_path = os.path.join(root_dir, 'src', 'instructlab', 'schema', 'v3', 'knowledge.json')
         try:
+            attempts.append(f'env-root: {alt_path}')
             with open(alt_path, 'r', encoding='utf-8') as sf:
-                return json.load(sf), alt_path
+                schema = json.load(sf)
+            store_version = _load_version_for(alt_path)
+            # Inline the version reference to avoid resolution issues
+            schema = _inline_version_ref(schema, store_version)
+            base_uri = pathlib.Path(alt_path).resolve().as_uri()
+            return schema, alt_path, base_uri, store_version, attempts
         except Exception:
-            pass
-    return None, None
+            attempts.append('env-root: miss')
+    # Fallback 3: CWD-based lookup (developer local runs)
+    try:
+        cwd_path = os.path.join(os.getcwd(), 'src', 'instructlab', 'schema', 'v3', 'knowledge.json')
+        attempts.append(f'cwd: {cwd_path}')
+        with open(cwd_path, 'r', encoding='utf-8') as sf:
+            schema = json.load(sf)
+        store_version = _load_version_for(cwd_path)
+        # Inline the version reference to avoid resolution issues
+        schema = _inline_version_ref(schema, store_version)
+        base_uri = pathlib.Path(cwd_path).resolve().as_uri()
+        return schema, cwd_path, base_uri, store_version, attempts
+    except Exception:
+        attempts.append('cwd: miss')
+    # Last resort: package resource (works only if importable as files)
+    if _iresources is not None:
+        try:
+            attempts.append('package: instructlab.schema.v3/knowledge.json')
+            pkg = 'instructlab.schema.v3'
+            base = _iresources.files(pkg)  # type: ignore[attr-defined]
+            data = base.joinpath('knowledge.json').read_text(encoding='utf-8')  # type: ignore[attr-defined]
+            vdata = base.joinpath('version.json').read_text(encoding='utf-8')  # type: ignore[attr-defined]
+            schema = _json.loads(data)
+            store_version = _json.loads(vdata)
+            # Inline the version reference to avoid resolution issues
+            schema = _inline_version_ref(schema, store_version)
+            return schema, 'package', None, store_version, attempts
+        except Exception:
+            attempts.append('package: miss')
+    return None, None, None, {}, attempts
 
 def lint_yaml_file(file_path: str) -> Dict[str, Any]:
     """Perform simple YAML file lint checks (formatting + duplicate keys)."""
@@ -263,13 +324,22 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
     normalized_path_info = file_path.replace('\\', '/')
     is_knowledge_path = '/knowledge/' in normalized_path_info
     schema_errors: List[str] = []
+    schema_attempts: List[str] = []
     if is_knowledge_path:
-        knowledge_schema, schema_src = _load_knowledge_schema()
+        knowledge_schema, schema_src, base_uri, store_version, schema_attempts = _load_knowledge_schema()
         try:
             if knowledge_schema is None:
                 print(colored("Info: Bundled knowledge schema not found; skipping JSON Schema validation.", 'yellow'))
             else:
-                jsonschema.validate(instance=content, schema=knowledge_schema)
+                # Validate using the schema with inlined version reference
+                try:
+                    validator_cls = jsonschema.validators.validator_for(knowledge_schema)  # type: ignore[attr-defined]
+                    validator_cls.check_schema(knowledge_schema)
+                    # Since we've inlined the version reference, we don't need a resolver
+                    validator = validator_cls(knowledge_schema)
+                    validator.validate(content)
+                except Exception as inner_e:
+                    raise inner_e
         except jsonschema.exceptions.ValidationError as ve:
             # Build helpful message with property path and schema hints
             prop_path = ".".join([str(p) for p in list(ve.path)])
@@ -450,6 +520,10 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
         print(colored("\nSchema Validation:", 'red', attrs=['bold']))
         for e in schema_errors:
             print(colored(f"- {e}", 'red'))
+    if schema_attempts:
+        print(colored("\nSchema Load Attempts:", 'cyan', attrs=['bold']))
+        for a in schema_attempts:
+            print(colored(f"- {a}", 'cyan'))
 
     if yaml_lint:
         lint = lint_yaml_file(file_path)
@@ -553,12 +627,19 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
         normalized_path_info = file_path.replace('\\', '/')
         is_knowledge_path = '/knowledge/' in normalized_path_info
         if is_knowledge_path:
-            knowledge_schema, schema_src = _load_knowledge_schema()
+            knowledge_schema, schema_src, base_uri, store_version, schema_attempts = _load_knowledge_schema()
             if knowledge_schema is not None:
-                jsonschema.validate(instance=content, schema=knowledge_schema)
-                schema_info = {"validated_against": "v3/knowledge.json", "source": schema_src, "errors": []}
+                try:
+                    validator_cls = jsonschema.validators.validator_for(knowledge_schema)  # type: ignore[attr-defined]
+                    validator_cls.check_schema(knowledge_schema)
+                    # Since we've inlined the version reference, we don't need a resolver
+                    validator = validator_cls(knowledge_schema)
+                    validator.validate(content)
+                except Exception as inner_e:
+                    raise inner_e
+                schema_info = {"validated_against": "v3/knowledge.json", "source": schema_src, "errors": [], "attempts": schema_attempts}
             else:
-                schema_info = {"validated_against": None, "source": None, "errors": []}
+                schema_info = {"validated_against": None, "source": None, "errors": [], "attempts": schema_attempts}
         else:
             schema_info = {"validated_against": None, "source": None, "errors": []}
     except jsonschema.exceptions.ValidationError as ve:
@@ -729,7 +810,11 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
         },
         "examples": examples_analysis,
         "diversity": {},
-        "schema": schema_info
+        "schema": schema_info,
+        "tool": {
+            "name": "analyze-qna",
+            "version": os.environ.get('ANALYZE_QNA_VERSION') or "unknown"
+        }
     }
 
     # Diversity heuristics (simple): detect presence of tables, lists, narrative, equations/theorems

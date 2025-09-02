@@ -40,11 +40,19 @@ function findPython() {
 
   const venvBin = path.join(venvDir, process.platform === 'win32' ? 'Scripts' : 'bin');
   const venvPython = path.join(venvBin, process.platform === 'win32' ? 'python.exe' : 'python');
+  let pkgVersion = 'unknown';
+  try {
+    const pkgJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+    if (pkgJson && typeof pkgJson.version === 'string') {
+      pkgVersion = pkgJson.version;
+    }
+  } catch (_) {}
   const env = {
     ...process.env,
     VIRTUAL_ENV: venvDir,
     PATH: `${venvBin}${path.delimiter}${process.env.PATH}`,
     ANALYZE_QNA_ROOT: rootDir,
+    ANALYZE_QNA_VERSION: pkgVersion,
   };
 
   // Install requirements (quiet)
