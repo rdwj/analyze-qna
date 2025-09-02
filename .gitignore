@@ -26,3 +26,7 @@ models/
 *.tar.br
 *.tar.z
 *.tar.lz
+
+.claude
+
+CLAUDE.md
