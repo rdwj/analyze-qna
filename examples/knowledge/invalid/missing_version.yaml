@@ -1,0 +1,53 @@
+# Missing version field
+created_by: test_user
+domain: Testing
+seed_examples:
+  - context: This is a test context.
+    questions_and_answers:
+      - question: What is this?
+        answer: A test.
+      - question: Why is it here?
+        answer: For testing.
+      - question: Does it work?
+        answer: Yes.
+  - context: Another context.
+    questions_and_answers:
+      - question: Question 1
+        answer: Answer 1
+      - question: Question 2
+        answer: Answer 2
+      - question: Question 3
+        answer: Answer 3
+  - context: Third context.
+    questions_and_answers:
+      - question: Q1
+        answer: A1
+      - question: Q2
+        answer: A2
+      - question: Q3
+        answer: A3
+  - context: Fourth context.
+    questions_and_answers:
+      - question: Q1
+        answer: A1
+      - question: Q2
+        answer: A2
+      - question: Q3
+        answer: A3
+  - context: Fifth context.
+    questions_and_answers:
+      - question: Q1
+        answer: A1
+      - question: Q2
+        answer: A2
+      - question: Q3
+        answer: A3
+document:
+  repo: https://github.com/test/repo
+  commit: test123
+  patterns:
+    - test.md
+document_outline: |
+  # Test Document
+  ## Section 1
+  ## Section 2

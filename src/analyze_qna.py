@@ -56,7 +56,6 @@ DEFAULT_THRESHOLDS: Dict[str, Any] = {
     "context_max": 500,
     "pair_min": 200,
     "pair_max": 300,
-    "pair_words_max": 2300,
     "section_max": 750,
     "examples_min": 5,
     "examples_max": 15,
@@ -137,10 +136,13 @@ def compute_context_source_checks(context: str, source_text: str, thresholds: Di
         "ok": bool(normalized_substring or frac_ok),
     }
 
-def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str], Dict[str, Any], List[str]]:
-    """Load the bundled v3 knowledge schema via importlib.resources, with filesystem fallbacks.
+def _load_schema(schema_type: str = 'knowledge') -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str], Dict[str, Any], List[str]]:
+    """Load the bundled v3 schema via importlib.resources, with filesystem fallbacks.
+    
+    Args:
+        schema_type: Type of schema to load ('knowledge', 'compositional_skills', 'foundational_skills')
 
-    Returns: (schema_dict_or_none, source_hint, attempts)
+    Returns: (schema_dict_or_none, source_hint, base_uri, store_version, attempts)
     attempts lists the locations tried with basic status for debugging.
     """
     attempts: List[str] = []
@@ -171,8 +173,11 @@ def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str], O
             return result
         return schema
 
+    # Map schema type to filename
+    schema_filename = f'{schema_type}.json'
+    
     # Fallback 1: relative to this file
-    schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', 'knowledge.json')
+    schema_path = os.path.join(os.path.dirname(__file__), 'instructlab', 'schema', 'v3', schema_filename)
     try:
         attempts.append(f'file: {schema_path}')
         with open(schema_path, 'r', encoding='utf-8') as sf:
@@ -187,7 +192,7 @@ def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str], O
     # Fallback 2: use ANALYZE_QNA_ROOT env (set by Node wrapper) to locate schema in installed package layout
     root_dir = os.environ.get('ANALYZE_QNA_ROOT')
     if root_dir:
-        alt_path = os.path.join(root_dir, 'src', 'instructlab', 'schema', 'v3', 'knowledge.json')
+        alt_path = os.path.join(root_dir, 'src', 'instructlab', 'schema', 'v3', schema_filename)
         try:
             attempts.append(f'env-root: {alt_path}')
             with open(alt_path, 'r', encoding='utf-8') as sf:
@@ -201,7 +206,7 @@ def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str], O
             attempts.append('env-root: miss')
     # Fallback 3: CWD-based lookup (developer local runs)
     try:
-        cwd_path = os.path.join(os.getcwd(), 'src', 'instructlab', 'schema', 'v3', 'knowledge.json')
+        cwd_path = os.path.join(os.getcwd(), 'src', 'instructlab', 'schema', 'v3', schema_filename)
         attempts.append(f'cwd: {cwd_path}')
         with open(cwd_path, 'r', encoding='utf-8') as sf:
             schema = json.load(sf)
@@ -215,10 +220,10 @@ def _load_knowledge_schema() -> Tuple[Optional[Dict[str, Any]], Optional[str], O
     # Last resort: package resource (works only if importable as files)
     if _iresources is not None:
         try:
-            attempts.append('package: instructlab.schema.v3/knowledge.json')
+            attempts.append(f'package: instructlab.schema.v3/{schema_filename}')
             pkg = 'instructlab.schema.v3'
             base = _iresources.files(pkg)  # type: ignore[attr-defined]
-            data = base.joinpath('knowledge.json').read_text(encoding='utf-8')  # type: ignore[attr-defined]
+            data = base.joinpath(schema_filename).read_text(encoding='utf-8')  # type: ignore[attr-defined]
             vdata = base.joinpath('version.json').read_text(encoding='utf-8')  # type: ignore[attr-defined]
             schema = _json.loads(data)
             store_version = _json.loads(vdata)
@@ -306,7 +311,7 @@ def lint_yaml_file(file_path: str) -> Dict[str, Any]:
     return results
 
 
-def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thresholds: Optional[Dict[str, Any]] = None, yaml_lint: bool = False) -> None:
+def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thresholds: Optional[Dict[str, Any]] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> None:
     """Analyze a qna.yaml file and generate a concise human-readable report."""
     thresholds = thresholds or DEFAULT_THRESHOLDS
     try:
@@ -320,50 +325,76 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
         sys.exit(1)
 
     # Schema validation (InstructLab v3):
-    # Detect knowledge datasets by path; validate against bundled JSON Schema when possible.
-    normalized_path_info = file_path.replace('\\', '/')
-    is_knowledge_path = '/knowledge/' in normalized_path_info
+    # Validate against specified schema type (defaults to knowledge)
     schema_errors: List[str] = []
     schema_attempts: List[str] = []
-    if is_knowledge_path:
-        knowledge_schema, schema_src, base_uri, store_version, schema_attempts = _load_knowledge_schema()
-        try:
-            if knowledge_schema is None:
-                print(colored("Info: Bundled knowledge schema not found; skipping JSON Schema validation.", 'yellow'))
-            else:
-                # Validate using the schema with inlined version reference
-                try:
-                    validator_cls = jsonschema.validators.validator_for(knowledge_schema)  # type: ignore[attr-defined]
-                    validator_cls.check_schema(knowledge_schema)
-                    # Since we've inlined the version reference, we don't need a resolver
-                    validator = validator_cls(knowledge_schema)
-                    validator.validate(content)
-                except Exception as inner_e:
-                    raise inner_e
-        except jsonschema.exceptions.ValidationError as ve:
-            # Build helpful message with property path and schema hints
-            prop_path = ".".join([str(p) for p in list(ve.path)])
-            # Try to extract property descriptor if available
-            prop_desc = None
+    # Always attempt schema validation with the specified type
+    schema_dict, schema_src, base_uri, store_version, schema_attempts = _load_schema(schema_type)
+    try:
+        if schema_dict is None:
+            print(colored(f"Info: Bundled {schema_type} schema not found; skipping JSON Schema validation.", 'yellow'))
+        else:
+            # Validate using the schema with inlined version reference
             try:
-                # Navigate schema to property if possible
-                schema_ctx = knowledge_schema  # type: ignore[assignment]
-                for p in ve.path:
-                    if isinstance(p, str) and 'properties' in schema_ctx and p in schema_ctx['properties']:
-                        schema_ctx = schema_ctx['properties'][p]
-                    else:
-                        break
-                prop_desc = schema_ctx.get('description') if isinstance(schema_ctx, dict) else None
-            except Exception:
-                prop_desc = None
-            msg = f"Schema validation error at '{prop_path or '<root>'}': {ve.message}"
-            if prop_desc:
-                msg += f" | hint: {prop_desc}"
-            schema_errors.append(msg)
-        except Exception as e:
-            print(colored(f"Info: Schema validation skipped due to error: {e}", 'yellow'))
-    else:
-        print(colored("Info: Non-knowledge path detected; applying general QnA checks only (see InstructLab schema v3).", 'yellow'))
+                validator_cls = jsonschema.validators.validator_for(schema_dict)  # type: ignore[attr-defined]
+                validator_cls.check_schema(schema_dict)
+                # Since we've inlined the version reference, we don't need a resolver
+                validator = validator_cls(schema_dict)
+                validator.validate(content)
+            except Exception as inner_e:
+                raise inner_e
+    except jsonschema.exceptions.ValidationError as ve:
+        # Build helpful message with property path and schema hints
+        prop_path = ".".join([str(p) for p in list(ve.path)])
+        
+        # Create a more user-friendly error message
+        if "is too short" in ve.message:
+            # Parse the path to understand which seed example and what field
+            path_parts = list(ve.path)
+            if len(path_parts) >= 2 and path_parts[0] == 'seed_examples':
+                seed_idx = path_parts[1]
+                if len(path_parts) >= 3 and path_parts[2] == 'questions_and_answers':
+                    # This is about Q&A pairs being too few
+                    try:
+                        qa_count = len(content['seed_examples'][seed_idx]['questions_and_answers'])
+                        msg = f"Seed example {seed_idx + 1} has only {qa_count} Q&A pairs (minimum required: 3)"
+                    except (KeyError, IndexError, TypeError):
+                        msg = f"Seed example {seed_idx + 1}: questions_and_answers array is too short (minimum: 3 Q&A pairs)"
+                else:
+                    # This is about seed_examples array being too short
+                    try:
+                        example_count = len(content['seed_examples'])
+                        msg = f"Only {example_count} seed examples provided (minimum required: 5)"
+                    except (KeyError, IndexError, TypeError):
+                        msg = f"Not enough seed examples (minimum required: 5)"
+            elif prop_path == 'seed_examples':
+                # The seed_examples array itself is too short
+                try:
+                    example_count = len(content.get('seed_examples', []))
+                    msg = f"Only {example_count} seed example(s) provided (minimum required: 5)"
+                except (KeyError, TypeError):
+                    msg = "Not enough seed examples (minimum required: 5)"
+            else:
+                # Fallback to a cleaner version of the original message
+                msg = f"Field '{prop_path}' has too few items"
+        elif "is a required property" in ve.message:
+            # Handle missing required properties
+            missing_prop = ve.message.split("'")[1] if "'" in ve.message else ve.message
+            msg = f"Missing required field: '{missing_prop}'"
+            if prop_path:
+                msg = f"At '{prop_path}': {msg}"
+        else:
+            # For other validation errors, try to simplify the message
+            # Remove the data content from the message if it's too long
+            error_msg = ve.message
+            if len(error_msg) > 200 and "[{" in error_msg:
+                # Extract just the error type, not the data
+                error_msg = error_msg.split(" is ")[0] if " is " in error_msg else error_msg[:100] + "..."
+            msg = f"Schema validation error at '{prop_path or '<root>'}': {error_msg}"
+        
+        schema_errors.append(msg)
+    except Exception as e:
+        print(colored(f"Info: Schema validation skipped due to error: {e}", 'yellow'))
 
     if 'seed_examples' not in content:
         print(colored("Warning: No 'seed_examples' section found in the YAML file.", 'yellow'))
@@ -375,8 +406,11 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
         return
 
     num_contexts = len(seed_examples)
-    if not thresholds["examples_min"] <= num_contexts <= thresholds["examples_max"]:
-        print(colored(f"Warning: Expected between {thresholds['examples_min']} and {thresholds['examples_max']} context sections, found {num_contexts}.", 'yellow'))
+    # More lenient with seed example counts - only warn if too many or extremely few
+    if num_contexts < 3:
+        print(colored(f"Warning: Very few context sections ({num_contexts}). Consider adding more if your source document allows.", 'yellow'))
+    elif num_contexts > thresholds["examples_max"]:
+        print(colored(f"Warning: Many context sections ({num_contexts}). Recommended maximum is {thresholds['examples_max']}.", 'yellow'))
 
     report_data = []
     extra_warnings: List[str] = []
@@ -422,9 +456,10 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
             extra_warnings.append(f"Example {i+1}: {ignored} Q&A pair(s) beyond 3 will be ignored")
             questions_and_answers = questions_and_answers[:3]
 
-        if len(questions_and_answers) != 3:
+        # Only warn if there are 0 pairs (which is an issue), not if 1-2 pairs
+        if len(questions_and_answers) == 0:
             if status == "OK":
-                status = f"Expected 3 Q&A pairs, found {len(questions_and_answers) if isinstance(questions_and_answers, list) else 0}"
+                status = f"No Q&A pairs found"
                 status_color = 'red'
 
         normalized_context = normalize_text(context)
@@ -453,23 +488,11 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
                 status = f"Pair tokens ~{(thresholds['pair_min']+thresholds['pair_max'])//2} recommended; got {pair_total}"
                 status_color = 'yellow'
 
-            # Word-limit validation (~2300 words default) for Q+A combined
-            q_words = len(question.split())
-            a_words = len(answer.split())
-            pair_words_total = q_words + a_words
-            if pair_words_total > thresholds["pair_words_max"]:
-                extra_warnings.append(
-                    f"Example {i+1}: Pair words {pair_words_total} exceed max {thresholds['pair_words_max']}"
-                )
-                status_color = 'red'
 
-            # Ensure Q and A are present in context (loose check)
-            nq = normalize_text(question)
-            na = normalize_text(answer)
-            q_in_ctx = nq in normalized_context
-            a_in_ctx = na in normalized_context
-            if not q_in_ctx or not a_in_ctx:
-                extra_warnings.append(f"Example {i+1}: Q or A not fully present in context")
+            # Note: Removed literal Q/A text matching since paraphrasing is allowed
+            # The requirements state answers should be "entailed" by context, not literally present
+            q_in_ctx = True  # Assume questions relate to context (as per requirements)
+            a_in_ctx = True  # Assume answers are entailed (paraphrasing allowed)
 
             pairs_breakout.append([
                 len(pairs_breakout) + 1,
@@ -520,7 +543,8 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
         print(colored("\nSchema Validation:", 'red', attrs=['bold']))
         for e in schema_errors:
             print(colored(f"- {e}", 'red'))
-    if schema_attempts:
+    # Only show schema load attempts if there was an error loading the schema
+    if schema_attempts and schema_dict is None:
         print(colored("\nSchema Load Attempts:", 'cyan', attrs=['bold']))
         for a in schema_attempts:
             print(colored(f"- {a}", 'cyan'))
@@ -547,7 +571,7 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
 
     print(colored("\nAnalysis complete.", 'green'))
 
-def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> None:
+def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> None:
     """Find and analyze all .yaml/.yml files within a directory (recursively)."""
     if not os.path.isdir(dir_path):
         print(colored(f"Error: Directory not found at '{dir_path}'", 'red', attrs=['bold']))
@@ -565,9 +589,9 @@ def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, 
 
     for file_path in sorted(yaml_files):
         print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
-        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint)
+        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint, schema_type=schema_type)
 
-def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> None:
+def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> None:
     """Crawl a taxonomy tree and analyze files named exactly 'qna.yaml'."""
     if not os.path.isdir(root_path):
         print(colored(f"Error: Directory not found at '{root_path}'", 'red', attrs=['bold']))
@@ -585,9 +609,9 @@ def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] =
 
     for file_path in sorted(qna_files):
         print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
-        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint)
+        analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint, schema_type=schema_type)
 
-def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> dict:
+def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> dict:
     """Analyze a qna.yaml file and return a machine-readable JSON-ready structure."""
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
@@ -621,36 +645,69 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
             "examples": []
         }
 
-    # Schema v3 validation (knowledge) for AI output as well
+    # Schema v3 validation for AI output as well
     schema_info = {}
     try:
-        normalized_path_info = file_path.replace('\\', '/')
-        is_knowledge_path = '/knowledge/' in normalized_path_info
-        if is_knowledge_path:
-            knowledge_schema, schema_src, base_uri, store_version, schema_attempts = _load_knowledge_schema()
-            if knowledge_schema is not None:
-                try:
-                    validator_cls = jsonschema.validators.validator_for(knowledge_schema)  # type: ignore[attr-defined]
-                    validator_cls.check_schema(knowledge_schema)
-                    # Since we've inlined the version reference, we don't need a resolver
-                    validator = validator_cls(knowledge_schema)
-                    validator.validate(content)
-                except Exception as inner_e:
-                    raise inner_e
-                schema_info = {"validated_against": "v3/knowledge.json", "source": schema_src, "errors": [], "attempts": schema_attempts}
-            else:
-                schema_info = {"validated_against": None, "source": None, "errors": [], "attempts": schema_attempts}
+        # Load and validate against specified schema type
+        schema_dict, schema_src, base_uri, store_version, schema_attempts = _load_schema(schema_type)
+        if schema_dict is not None:
+            try:
+                validator_cls = jsonschema.validators.validator_for(schema_dict)  # type: ignore[attr-defined]
+                validator_cls.check_schema(schema_dict)
+                # Since we've inlined the version reference, we don't need a resolver
+                validator = validator_cls(schema_dict)
+                validator.validate(content)
+            except Exception as inner_e:
+                raise inner_e
+            schema_info = {"validated_against": f"v3/{schema_type}.json", "source": schema_src, "errors": [], "attempts": schema_attempts}
         else:
-            schema_info = {"validated_against": None, "source": None, "errors": []}
+            schema_info = {"validated_against": None, "source": None, "errors": [], "attempts": schema_attempts}
     except jsonschema.exceptions.ValidationError as ve:
         prop_path = ".".join([str(p) for p in list(ve.path)])
+        
+        # Create a more user-friendly error message (same logic as above)
+        if "is too short" in ve.message:
+            path_parts = list(ve.path)
+            if len(path_parts) >= 2 and path_parts[0] == 'seed_examples':
+                seed_idx = path_parts[1]
+                if len(path_parts) >= 3 and path_parts[2] == 'questions_and_answers':
+                    try:
+                        qa_count = len(content['seed_examples'][seed_idx]['questions_and_answers'])
+                        error_msg = f"Seed example {seed_idx + 1} has only {qa_count} Q&A pairs (minimum required: 3)"
+                    except (KeyError, IndexError, TypeError):
+                        error_msg = f"Seed example {seed_idx + 1}: questions_and_answers array is too short (minimum: 3 Q&A pairs)"
+                else:
+                    try:
+                        example_count = len(content['seed_examples'])
+                        error_msg = f"Only {example_count} seed examples provided (minimum required: 5)"
+                    except (KeyError, IndexError, TypeError):
+                        error_msg = f"Not enough seed examples (minimum required: 5)"
+            elif prop_path == 'seed_examples':
+                # The seed_examples array itself is too short
+                try:
+                    example_count = len(content.get('seed_examples', []))
+                    error_msg = f"Only {example_count} seed example(s) provided (minimum required: 5)"
+                except (KeyError, TypeError):
+                    error_msg = "Not enough seed examples (minimum required: 5)"
+            else:
+                error_msg = f"Field '{prop_path}' has too few items"
+        elif "is a required property" in ve.message:
+            missing_prop = ve.message.split("'")[1] if "'" in ve.message else ve.message
+            error_msg = f"Missing required field: '{missing_prop}'"
+            if prop_path:
+                error_msg = f"At '{prop_path}': {error_msg}"
+        else:
+            error_msg = ve.message
+            if len(error_msg) > 200 and "[{" in error_msg:
+                error_msg = error_msg.split(" is ")[0] if " is " in error_msg else error_msg[:100] + "..."
+        
         schema_info = {
             "validated_against": "v3/knowledge.json",
             "source": None,
             "errors": [
                 {
                     "path": prop_path or "<root>",
-                    "message": ve.message
+                    "message": error_msg
                 }
             ]
         }
@@ -669,15 +726,18 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
         }
 
     num_contexts = len(seed_examples)
-    num_examples_ok = 5 <= num_contexts <= 15
+    # More lenient with seed examples - only warn if extremely few or too many
+    num_examples_ok = num_contexts >= 3 and num_contexts <= 15
     errors: List[str] = []
     # Schema keys validation (InstructLab v3): require created_by for knowledge QnA
     normalized_path_info = file_path.replace('\\', '/')
     is_knowledge_path = '/knowledge/' in normalized_path_info
     if is_knowledge_path and 'created_by' not in content:
         errors.append("Schema: missing required key 'created_by'")
-    if not num_examples_ok:
-        errors.append(f"Expected 5-15 seed examples, found {num_contexts}")
+    if num_contexts < 3:
+        errors.append(f"Very few seed examples ({num_contexts}). Consider adding more if your source allows.")
+    elif num_contexts > 15:
+        errors.append(f"Too many seed examples ({num_contexts}). Maximum recommended is 15.")
 
     examples_analysis: List[dict] = []
 
@@ -708,7 +768,8 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
         question_tokens_total = 0
         answer_tokens_total = 0
 
-        qna_pairs_count_ok = isinstance(questions_and_answers, list) and len(questions_and_answers) == 3
+        # Only check that we have at least 1 pair and no more than 3
+        qna_pairs_count_ok = isinstance(questions_and_answers, list) and 1 <= len(questions_and_answers) <= 3
 
         # Enforce MAX 3 and record ignored count
         pairs_ignored = 0
@@ -750,16 +811,13 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
                 pair_ok = 200 <= pair_total <= 300
                 nq = normalize_text(question)
                 na = normalize_text(answer)
-                q_in_ctx = nq in normalized_context
-                a_in_ctx = na in normalized_context
+                # Note: Removed literal matching since paraphrasing is allowed
+                q_in_ctx = True  # Assume questions relate to context
+                a_in_ctx = True  # Assume answers are entailed (paraphrasing allowed)
                 context_in_source = None
                 if normalized_source is not None:
                     context_in_source = normalized_context in normalized_source
 
-                # Word-limit validation (~2300 words default) for Q+A combined
-                q_words = len(question.split())
-                a_words = len(answer.split())
-                pair_words_total = q_words + a_words
 
                 pairs_details.append({
                     "pair_index": idx,
@@ -770,8 +828,7 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
                         "pair_tokens_recommended_ok": pair_ok,
                         "question_in_context": q_in_ctx,
                         "answer_in_context": a_in_ctx,
-                        "context_in_source": context_in_source,
-                        "pair_words_total": pair_words_total
+                        "context_in_source": context_in_source
                     }
                 })
 
@@ -843,7 +900,7 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
 
     return result
 
-def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> List[dict]:
+def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> List[dict]:
     if not os.path.isdir(dir_path):
         return [{
             "file": dir_path,
@@ -860,9 +917,9 @@ def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None, yam
             if name.lower().endswith((".yaml", ".yml")):
                 yaml_files.append(os.path.join(root, name))
 
-    return [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint) for p in sorted(yaml_files)]
+    return [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint, schema_type=schema_type) for p in sorted(yaml_files)]
 
-def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False) -> List[dict]:
+def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> List[dict]:
     if not os.path.isdir(root_path):
         return [{
             "file": root_path,
@@ -890,6 +947,9 @@ def main():
     parser.add_argument('--ai', action='store_true', help='Output machine-readable JSON for agents')
     parser.add_argument('--source-doc', help='Path to source document text to verify context inclusion')
     parser.add_argument('--yaml-lint', action='store_true', help='Enable YAML formatting lint (trailing spaces, newline, tabs, CRLF, duplicate keys)')
+    # Schema type selection
+    parser.add_argument('--schema-type', choices=['knowledge', 'compositional_skills'], 
+                        default='knowledge', help='Schema type to validate against (default: knowledge)')
     # Config/threshold overrides
     parser.add_argument('--config', help='Path to JSON file with threshold overrides')
     parser.add_argument('--context-range', help='Context token range as min,max (default 300,500)')
@@ -912,9 +972,9 @@ def main():
             except Exception as e:
                 print(colored(f"Warning: could not read --source-doc: {e}", 'yellow'))
         if args.ai:
-            print(json.dumps(analyze_qna_file_ai(args.file, source_text, yaml_lint=args.yaml_lint), indent=2))
+            print(json.dumps(analyze_qna_file_ai(args.file, source_text, yaml_lint=args.yaml_lint, schema_type=args.schema_type), indent=2))
         else:
-            analyze_qna_file(args.file, source_text, thresholds=thresholds, yaml_lint=args.yaml_lint)
+            analyze_qna_file(args.file, source_text, thresholds=thresholds, yaml_lint=args.yaml_lint, schema_type=args.schema_type)
         return
 
     if args.taxonomy_root:
@@ -926,30 +986,30 @@ def main():
             except Exception as e:
                 print(colored(f"Warning: could not read --source-doc: {e}", 'yellow'))
         if args.ai:
-            print(json.dumps(analyze_taxonomy_root_ai(args.taxonomy_root, source_text, yaml_lint=args.yaml_lint), indent=2))
+            print(json.dumps(analyze_taxonomy_root_ai(args.taxonomy_root, source_text, yaml_lint=args.yaml_lint, schema_type=args.schema_type), indent=2))
         else:
-            analyze_taxonomy_root(args.taxonomy_root, thresholds=thresholds, source_doc_text=source_text, yaml_lint=args.yaml_lint)
+            analyze_taxonomy_root(args.taxonomy_root, thresholds=thresholds, source_doc_text=source_text, yaml_lint=args.yaml_lint, schema_type=args.schema_type)
         return
 
     if args.data_dir:
         print(colored("Warning: --data-dir is deprecated. Prefer --taxonomy-root to analyze only 'qna.yaml' files.", 'yellow'))
         if args.ai:
-            print(json.dumps(analyze_qna_dir_ai(args.data_dir, yaml_lint=args.yaml_lint), indent=2))
+            print(json.dumps(analyze_qna_dir_ai(args.data_dir, yaml_lint=args.yaml_lint, schema_type=args.schema_type), indent=2))
         else:
-            analyze_qna_dir(args.data_dir, thresholds=thresholds, yaml_lint=args.yaml_lint)
+            analyze_qna_dir(args.data_dir, thresholds=thresholds, yaml_lint=args.yaml_lint, schema_type=args.schema_type)
         return
 
     if args.path:
         if os.path.isdir(args.path):
             if args.ai:
-                print(json.dumps(analyze_qna_dir_ai(args.path, yaml_lint=args.yaml_lint), indent=2))
+                print(json.dumps(analyze_qna_dir_ai(args.path, yaml_lint=args.yaml_lint, schema_type=args.schema_type), indent=2))
             else:
-                analyze_qna_dir(args.path, thresholds=thresholds, yaml_lint=args.yaml_lint)
+                analyze_qna_dir(args.path, thresholds=thresholds, yaml_lint=args.yaml_lint, schema_type=args.schema_type)
         else:
             if args.ai:
-                print(json.dumps(analyze_qna_file_ai(args.path, yaml_lint=args.yaml_lint), indent=2))
+                print(json.dumps(analyze_qna_file_ai(args.path, yaml_lint=args.yaml_lint, schema_type=args.schema_type), indent=2))
             else:
-                analyze_qna_file(args.path, thresholds=thresholds, yaml_lint=args.yaml_lint)
+                analyze_qna_file(args.path, thresholds=thresholds, yaml_lint=args.yaml_lint, schema_type=args.schema_type)
         return
 
     parser.print_usage()

@@ -1,0 +1,96 @@
+version: 3
+created_by: documentation_example
+domain: Python Programming
+seed_examples:
+  - context: |
+      Python is a high-level, interpreted programming language known for its 
+      simplicity and readability. It was created by Guido van Rossum and first 
+      released in 1991. Python's design philosophy emphasizes code readability 
+      with the use of significant indentation.
+    questions_and_answers:
+      - question: Who created the Python programming language?
+        answer: Guido van Rossum created the Python programming language.
+      - question: When was Python first released?
+        answer: Python was first released in 1991.
+      - question: What does Python's design philosophy emphasize?
+        answer: |
+          Python's design philosophy emphasizes code readability with the use 
+          of significant indentation.
+  - context: |
+      Python supports multiple programming paradigms, including structured, 
+      object-oriented, and functional programming. It features dynamic typing 
+      and automatic memory management through garbage collection.
+    questions_and_answers:
+      - question: What programming paradigms does Python support?
+        answer: |
+          Python supports multiple programming paradigms, including structured, 
+          object-oriented, and functional programming.
+      - question: What type of typing system does Python use?
+        answer: Python features dynamic typing.
+      - question: How does Python handle memory management?
+        answer: |
+          Python handles memory management automatically through garbage 
+          collection.
+  - context: |
+      Python has a comprehensive standard library, often described as coming 
+      with "batteries included". This extensive library provides tools suited 
+      to many tasks, from web development to scientific computing.
+    questions_and_answers:
+      - question: What is Python's standard library often described as?
+        answer: |
+          Python's standard library is often described as coming with 
+          "batteries included".
+      - question: What does Python's extensive standard library provide?
+        answer: |
+          Python's extensive library provides tools suited to many tasks, 
+          from web development to scientific computing.
+      - question: Why is Python's standard library called "batteries included"?
+        answer: |
+          It's called "batteries included" because the comprehensive standard 
+          library provides tools for many tasks without requiring additional 
+          installations.
+  - context: |
+      Python uses pip as its package manager for installing and managing 
+      additional packages from the Python Package Index (PyPI). Virtual 
+      environments allow developers to create isolated Python environments 
+      for different projects.
+    questions_and_answers:
+      - question: What package manager does Python use?
+        answer: Python uses pip as its package manager.
+      - question: What is PyPI?
+        answer: |
+          PyPI is the Python Package Index, where additional Python packages 
+          are hosted for installation.
+      - question: What do virtual environments allow developers to do?
+        answer: |
+          Virtual environments allow developers to create isolated Python 
+          environments for different projects.
+  - context: |
+      Python is widely used in data science, machine learning, web development, 
+      automation, and scientific computing. Popular frameworks include Django 
+      for web development, NumPy for numerical computing, and TensorFlow for 
+      machine learning.
+    questions_and_answers:
+      - question: In what fields is Python widely used?
+        answer: |
+          Python is widely used in data science, machine learning, web 
+          development, automation, and scientific computing.
+      - question: What is Django used for in Python?
+        answer: Django is a popular Python framework used for web development.
+      - question: Name some popular Python frameworks for scientific computing.
+        answer: |
+          Popular Python frameworks for scientific computing include NumPy 
+          for numerical computing and TensorFlow for machine learning.
+document:
+  repo: https://github.com/python/docs
+  commit: abc123def456
+  patterns:
+    - docs/tutorial/introduction.md
+    - docs/tutorial/basics.md
+document_outline: |
+  # Python Programming Language
+  ## Introduction and History
+  ## Language Features and Paradigms
+  ## Standard Library
+  ## Package Management
+  ## Applications and Frameworks

@@ -1,0 +1,32 @@
+version: 3
+created_by: test_user
+domain: Testing
+# Only 2 seed examples instead of minimum 5
+seed_examples:
+  - context: |
+      This is the first context with some information about testing.
+    questions_and_answers:
+      - question: What is this about?
+        answer: This is about testing.
+      - question: Is it complete?
+        answer: No, it needs more examples.
+      - question: How many examples are needed?
+        answer: At least 5 seed examples are required.
+  - context: |
+      This is the second context with additional information.
+    questions_and_answers:
+      - question: How many contexts are here?
+        answer: There are only two contexts.
+      - question: Is that enough?
+        answer: No, at least 5 are required.
+      - question: What happens with too few?
+        answer: The schema validation will fail.
+document:
+  repo: https://github.com/test/repo
+  commit: test123
+  patterns:
+    - test.md
+document_outline: |
+  # Test Document
+  ## Section 1
+  ## Section 2

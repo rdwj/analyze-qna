@@ -1,0 +1,147 @@
+{
+  "file": "examples/knowledge/invalid/too_few_examples.yaml",
+  "ok": false,
+  "errors": [
+    "Expected 5-15 seed examples, found 2"
+  ],
+  "seed_examples_count": 2,
+  "constraints": {
+    "num_examples_recommended": {
+      "min": 5,
+      "max": 15,
+      "ok": false
+    }
+  },
+  "examples": [
+    {
+      "index": 1,
+      "context_tokens": 11,
+      "question_tokens_total": 15,
+      "answer_tokens_total": 21,
+      "total_section_tokens": 47,
+      "constraints": {
+        "context_tokens_range_ok": false,
+        "qna_pairs_count_ok": true,
+        "total_section_tokens_max_ok": true,
+        "context_deviation_from_500": 489,
+        "pairs_ignored": 0
+      },
+      "pairs": [
+        {
+          "pair_index": 1,
+          "question_tokens": 5,
+          "answer_tokens": 5,
+          "pair_tokens_total": 10,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 8
+          }
+        },
+        {
+          "pair_index": 2,
+          "question_tokens": 4,
+          "answer_tokens": 7,
+          "pair_tokens_total": 11,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 8
+          }
+        },
+        {
+          "pair_index": 3,
+          "question_tokens": 6,
+          "answer_tokens": 9,
+          "pair_tokens_total": 15,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 12
+          }
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "context_tokens": 9,
+      "question_tokens_total": 16,
+      "answer_tokens_total": 21,
+      "total_section_tokens": 46,
+      "constraints": {
+        "context_tokens_range_ok": false,
+        "qna_pairs_count_ok": true,
+        "total_section_tokens_max_ok": true,
+        "context_deviation_from_500": 491,
+        "pairs_ignored": 0
+      },
+      "pairs": [
+        {
+          "pair_index": 1,
+          "question_tokens": 6,
+          "answer_tokens": 6,
+          "pair_tokens_total": 12,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 10
+          }
+        },
+        {
+          "pair_index": 2,
+          "question_tokens": 4,
+          "answer_tokens": 9,
+          "pair_tokens_total": 13,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 9
+          }
+        },
+        {
+          "pair_index": 3,
+          "question_tokens": 6,
+          "answer_tokens": 6,
+          "pair_tokens_total": 12,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 10
+          }
+        }
+      ]
+    }
+  ],
+  "diversity": {
+    "table": false,
+    "list": false,
+    "narrative": false,
+    "equation_or_theorem": false
+  },
+  "schema": {
+    "validated_against": "v3/knowledge.json",
+    "source": null,
+    "errors": [
+      {
+        "path": "seed_examples",
+        "message": "[{'context': 'This is the first context with some information about testing.\\n', 'questions_and_answers': [{'question': 'What is this about?', 'answer': 'This is about testing.'}, {'question': 'Is it complete?', 'answer': 'No, it needs more examples.'}, {'question': 'How many examples are needed?', 'answer': 'At least 5 seed examples are required.'}]}, {'context': 'This is the second context with additional information.\\n', 'questions_and_answers': [{'question': 'How many contexts are here?', 'answer': 'There are only two contexts.'}, {'question': 'Is that enough?', 'answer': 'No, at least 5 are required.'}, {'question': 'What happens with too few?', 'answer': 'The schema validation will fail.'}]}] is too short"
+      }
+    ]
+  },
+  "tool": {
+    "name": "analyze-qna",
+    "version": "0.0.14"
+  }
+}

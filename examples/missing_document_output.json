@@ -1,0 +1,310 @@
+{
+  "file": "examples/knowledge/invalid/missing_document.yaml",
+  "ok": false,
+  "errors": [],
+  "seed_examples_count": 5,
+  "constraints": {
+    "num_examples_recommended": {
+      "min": 5,
+      "max": 15,
+      "ok": true
+    }
+  },
+  "examples": [
+    {
+      "index": 1,
+      "context_tokens": 3,
+      "question_tokens_total": 6,
+      "answer_tokens_total": 6,
+      "total_section_tokens": 15,
+      "constraints": {
+        "context_tokens_range_ok": false,
+        "qna_pairs_count_ok": true,
+        "total_section_tokens_max_ok": true,
+        "context_deviation_from_500": 497,
+        "pairs_ignored": 0
+      },
+      "pairs": [
+        {
+          "pair_index": 1,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 2,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 3,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "context_tokens": 3,
+      "question_tokens_total": 6,
+      "answer_tokens_total": 6,
+      "total_section_tokens": 15,
+      "constraints": {
+        "context_tokens_range_ok": false,
+        "qna_pairs_count_ok": true,
+        "total_section_tokens_max_ok": true,
+        "context_deviation_from_500": 497,
+        "pairs_ignored": 0
+      },
+      "pairs": [
+        {
+          "pair_index": 1,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 2,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 3,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "context_tokens": 3,
+      "question_tokens_total": 6,
+      "answer_tokens_total": 6,
+      "total_section_tokens": 15,
+      "constraints": {
+        "context_tokens_range_ok": false,
+        "qna_pairs_count_ok": true,
+        "total_section_tokens_max_ok": true,
+        "context_deviation_from_500": 497,
+        "pairs_ignored": 0
+      },
+      "pairs": [
+        {
+          "pair_index": 1,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 2,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 3,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "context_tokens": 3,
+      "question_tokens_total": 6,
+      "answer_tokens_total": 6,
+      "total_section_tokens": 15,
+      "constraints": {
+        "context_tokens_range_ok": false,
+        "qna_pairs_count_ok": true,
+        "total_section_tokens_max_ok": true,
+        "context_deviation_from_500": 497,
+        "pairs_ignored": 0
+      },
+      "pairs": [
+        {
+          "pair_index": 1,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 2,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 3,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "context_tokens": 3,
+      "question_tokens_total": 6,
+      "answer_tokens_total": 6,
+      "total_section_tokens": 15,
+      "constraints": {
+        "context_tokens_range_ok": false,
+        "qna_pairs_count_ok": true,
+        "total_section_tokens_max_ok": true,
+        "context_deviation_from_500": 497,
+        "pairs_ignored": 0
+      },
+      "pairs": [
+        {
+          "pair_index": 1,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 2,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        },
+        {
+          "pair_index": 3,
+          "question_tokens": 2,
+          "answer_tokens": 2,
+          "pair_tokens_total": 4,
+          "constraints": {
+            "pair_tokens_recommended_ok": false,
+            "question_in_context": false,
+            "answer_in_context": false,
+            "context_in_source": null,
+            "pair_words_total": 2
+          }
+        }
+      ]
+    }
+  ],
+  "diversity": {
+    "table": false,
+    "list": false,
+    "narrative": false,
+    "equation_or_theorem": false
+  },
+  "schema": {
+    "validated_against": "v3/knowledge.json",
+    "source": null,
+    "errors": [
+      {
+        "path": "<root>",
+        "message": "'document_outline' is a required property"
+      }
+    ]
+  },
+  "tool": {
+    "name": "analyze-qna",
+    "version": "0.0.14"
+  }
+}
