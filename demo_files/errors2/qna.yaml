@@ -1,0 +1,13 @@
+version: 3
+created_by: demo_user
+domain: knowledge/errors2
+seed_examples:
+  - context: Missing document_outline and empty repo/commit.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+document:
+  repo: ''
+  commit: ''
+  patterns:
+    - 'docs/*.md'

@@ -1,0 +1,55 @@
+version: 3
+created_by: demo_user
+domain: knowledge/topic1
+document_outline: Documentation for Topic 1
+seed_examples:
+  - context: |
+      Topic 1 provides key functionality for the system.
+    questions_and_answers:
+      - question: What is Topic 1?
+        answer: Topic 1 is a key component of the system.
+      - question: Why is Topic 1 important?
+        answer: It provides essential functionality.
+      - question: How does Topic 1 work?
+        answer: It processes data through its pipeline.
+  - context: |
+      Topic 1 integrates with other components.
+    questions_and_answers:
+      - question: What does Topic 1 integrate with?
+        answer: It integrates with Topics 2 and 3.
+      - question: How is integration achieved?
+        answer: Through standardized APIs.
+      - question: What are the benefits?
+        answer: Seamless data flow between components.
+  - context: |
+      Performance characteristics of Topic 1.
+    questions_and_answers:
+      - question: How fast is Topic 1?
+        answer: It processes 1000 requests per second.
+      - question: What is the latency?
+        answer: Average latency is 50ms.
+      - question: Can it scale?
+        answer: Yes, it scales horizontally.
+  - context: |
+      Security features of Topic 1.
+    questions_and_answers:
+      - question: Is Topic 1 secure?
+        answer: Yes, it uses industry standard encryption.
+      - question: What authentication is used?
+        answer: OAuth 2.0 authentication.
+      - question: How is data protected?
+        answer: Data is encrypted at rest and in transit.
+  - context: |
+      Deployment options for Topic 1.
+    questions_and_answers:
+      - question: Where can Topic 1 be deployed?
+        answer: Cloud, on-premises, or hybrid.
+      - question: What platforms are supported?
+        answer: Linux, Windows, and containers.
+      - question: How to deploy?
+        answer: Using our deployment automation tools.
+document:
+  repo: 'https://github.com/demo/topic1.git'
+  commit: 'abc123'
+  patterns:
+    - 'docs/*.md'

@@ -1,0 +1,20 @@
+version: 3
+created_by: test_user
+domain: knowledge/topic3
+document_outline: Multiple Q&A violations
+seed_examples:
+  - context: Example 1 - too few Q&A pairs.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+  - context: Example 2 - also too few.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+document:
+  repo: 'https://github.com/test/test.git'
+  commit: 'abc123'
+  patterns:
+    - 'test.md'

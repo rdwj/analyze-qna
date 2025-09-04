@@ -1,0 +1,32 @@
+version: 3
+created_by: test_user
+domain: knowledge/topic1
+document_outline: File with too few seed examples
+seed_examples:
+  - context: Example 1 with too few Q&A pairs.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+  - context: Example 2.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+  - context: Example 3.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+document:
+  repo: 'https://github.com/test/test.git'
+  commit: 'abc123'
+  patterns:
+    - 'test.md'

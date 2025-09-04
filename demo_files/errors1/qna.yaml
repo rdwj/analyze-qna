@@ -1,0 +1,24 @@
+version: 3
+created_by: demo_user
+domain: knowledge/errors1
+document_outline: File with too few seed examples
+seed_examples:
+  - context: Example 1.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+  - context: Example 2.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+document:
+  repo: 'https://github.com/demo/demo.git'
+  commit: 'abc123'
+  patterns:
+    - 'docs/*.md'

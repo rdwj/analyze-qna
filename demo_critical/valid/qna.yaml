@@ -1,0 +1,50 @@
+version: 3
+created_by: demo_user
+domain: knowledge/valid
+document_outline: A fully compliant file
+seed_examples:
+  - context: Context 1.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+  - context: Context 2.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+  - context: Context 3.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+  - context: Context 4.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+  - context: Context 5.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+      - question: Q3?
+        answer: A3.
+document:
+  repo: 'https://github.com/demo/valid.git'
+  commit: 'abc123'
+  patterns:
+    - 'docs/*.md'

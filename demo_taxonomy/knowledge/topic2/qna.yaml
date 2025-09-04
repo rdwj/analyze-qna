@@ -1,0 +1,31 @@
+version: 3
+created_by: demo_user
+domain: knowledge/topic2
+document_outline: Documentation for Topic 2 (with violations)
+seed_examples:
+  - context: |
+      Topic 2 overview.
+    questions_and_answers:
+      - question: What is Topic 2?
+        answer: Topic 2 handles data processing.
+      - question: When to use Topic 2?
+        answer: When you need batch processing.
+  - context: |
+      Topic 2 configuration.
+    questions_and_answers:
+      - question: How to configure Topic 2?
+        answer: Edit the config.yaml file.
+      - question: What settings are available?
+        answer: Memory, CPU, and timeout settings.
+      - question: Can I change settings at runtime?
+        answer: Yes, most settings are hot-reloadable.
+  - context: |
+      Topic 2 troubleshooting.
+    questions_and_answers:
+      - question: Common errors?
+        answer: Usually configuration or permission issues.
+document:
+  repo: ''
+  commit: ''
+  patterns:
+    - 'docs/*.md'

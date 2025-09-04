@@ -1,0 +1,19 @@
+version: 3
+created_by: demo_user
+domain: knowledge/schema_errors
+seed_examples:
+  - context: Too few seed examples.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+      - question: Q2?
+        answer: A2.
+  - context: Another one with too few Q&As.
+    questions_and_answers:
+      - question: Q1?
+        answer: A1.
+document:
+  repo: ''
+  commit: ''
+  patterns:
+    - 'docs/*.md'

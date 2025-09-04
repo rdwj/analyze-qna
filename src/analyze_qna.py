@@ -340,59 +340,60 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
                 validator_cls.check_schema(schema_dict)
                 # Since we've inlined the version reference, we don't need a resolver
                 validator = validator_cls(schema_dict)
-                validator.validate(content)
+                
+                # Collect ALL validation errors, not just the first one
+                for ve in validator.iter_errors(content):
+                    # Build helpful message with property path and schema hints
+                    prop_path = ".".join([str(p) for p in list(ve.path)])
+                    
+                    # Create a more user-friendly error message
+                    if "is too short" in ve.message:
+                        # Parse the path to understand which seed example and what field
+                        path_parts = list(ve.path)
+                        if len(path_parts) >= 2 and path_parts[0] == 'seed_examples':
+                            seed_idx = path_parts[1]
+                            if len(path_parts) >= 3 and path_parts[2] == 'questions_and_answers':
+                                # This is about Q&A pairs being too few
+                                try:
+                                    qa_count = len(content['seed_examples'][seed_idx]['questions_and_answers'])
+                                    msg = f"Seed example {seed_idx + 1} has only {qa_count} Q&A pair{'s' if qa_count != 1 else ''} (minimum required: 3)"
+                                except (KeyError, IndexError, TypeError):
+                                    msg = f"Seed example {seed_idx + 1}: questions_and_answers array is too short (minimum: 3 Q&A pairs)"
+                            else:
+                                # This is about seed_examples array being too short
+                                try:
+                                    example_count = len(content['seed_examples'])
+                                    msg = f"Only {example_count} seed examples provided (minimum required: 5)"
+                                except (KeyError, IndexError, TypeError):
+                                    msg = f"Not enough seed examples (minimum required: 5)"
+                        elif prop_path == 'seed_examples':
+                            # The seed_examples array itself is too short
+                            try:
+                                example_count = len(content.get('seed_examples', []))
+                                msg = f"Only {example_count} seed example(s) provided (minimum required: 5)"
+                            except (KeyError, TypeError):
+                                msg = "Not enough seed examples (minimum required: 5)"
+                        else:
+                            # Fallback to a cleaner version of the original message
+                            msg = f"Field '{prop_path}' has too few items"
+                    elif "is a required property" in ve.message:
+                        # Handle missing required properties
+                        missing_prop = ve.message.split("'")[1] if "'" in ve.message else ve.message
+                        msg = f"Missing required field: '{missing_prop}'"
+                        if prop_path:
+                            msg = f"At '{prop_path}': {msg}"
+                    else:
+                        # For other validation errors, try to simplify the message
+                        # Remove the data content from the message if it's too long
+                        error_msg = ve.message
+                        if len(error_msg) > 200 and "[{" in error_msg:
+                            # Extract just the error type, not the data
+                            error_msg = error_msg.split(" is ")[0] if " is " in error_msg else error_msg[:100] + "..."
+                        msg = f"Schema validation error at '{prop_path or '<root>'}': {error_msg}"
+                    
+                    schema_errors.append(msg)
             except Exception as inner_e:
-                raise inner_e
-    except jsonschema.exceptions.ValidationError as ve:
-        # Build helpful message with property path and schema hints
-        prop_path = ".".join([str(p) for p in list(ve.path)])
-        
-        # Create a more user-friendly error message
-        if "is too short" in ve.message:
-            # Parse the path to understand which seed example and what field
-            path_parts = list(ve.path)
-            if len(path_parts) >= 2 and path_parts[0] == 'seed_examples':
-                seed_idx = path_parts[1]
-                if len(path_parts) >= 3 and path_parts[2] == 'questions_and_answers':
-                    # This is about Q&A pairs being too few
-                    try:
-                        qa_count = len(content['seed_examples'][seed_idx]['questions_and_answers'])
-                        msg = f"Seed example {seed_idx + 1} has only {qa_count} Q&A pairs (minimum required: 3)"
-                    except (KeyError, IndexError, TypeError):
-                        msg = f"Seed example {seed_idx + 1}: questions_and_answers array is too short (minimum: 3 Q&A pairs)"
-                else:
-                    # This is about seed_examples array being too short
-                    try:
-                        example_count = len(content['seed_examples'])
-                        msg = f"Only {example_count} seed examples provided (minimum required: 5)"
-                    except (KeyError, IndexError, TypeError):
-                        msg = f"Not enough seed examples (minimum required: 5)"
-            elif prop_path == 'seed_examples':
-                # The seed_examples array itself is too short
-                try:
-                    example_count = len(content.get('seed_examples', []))
-                    msg = f"Only {example_count} seed example(s) provided (minimum required: 5)"
-                except (KeyError, TypeError):
-                    msg = "Not enough seed examples (minimum required: 5)"
-            else:
-                # Fallback to a cleaner version of the original message
-                msg = f"Field '{prop_path}' has too few items"
-        elif "is a required property" in ve.message:
-            # Handle missing required properties
-            missing_prop = ve.message.split("'")[1] if "'" in ve.message else ve.message
-            msg = f"Missing required field: '{missing_prop}'"
-            if prop_path:
-                msg = f"At '{prop_path}': {msg}"
-        else:
-            # For other validation errors, try to simplify the message
-            # Remove the data content from the message if it's too long
-            error_msg = ve.message
-            if len(error_msg) > 200 and "[{" in error_msg:
-                # Extract just the error type, not the data
-                error_msg = error_msg.split(" is ")[0] if " is " in error_msg else error_msg[:100] + "..."
-            msg = f"Schema validation error at '{prop_path or '<root>'}': {error_msg}"
-        
-        schema_errors.append(msg)
+                print(colored(f"Info: Schema validation error: {inner_e}", 'yellow'))
     except Exception as e:
         print(colored(f"Info: Schema validation skipped due to error: {e}", 'yellow'))
 
@@ -568,8 +569,237 @@ def analyze_qna_file(file_path: str, source_doc_text: Optional[str] = None, thre
             print(colored("\nYAML Lint:", 'magenta', attrs=['bold']))
             for n in lint_notes:
                 print(colored(f"- {n}", 'magenta'))
+    
+    # Summary statistics
+    if seed_examples:
+        qa_counts = []
+        for example in seed_examples:
+            qa_list = example.get('questions_and_answers', [])
+            if isinstance(qa_list, list):
+                qa_counts.append(len(qa_list))
+        
+        if qa_counts:
+            total_qa = sum(qa_counts)
+            avg_qa = total_qa / len(qa_counts)
+            min_qa = min(qa_counts)
+            max_qa = max(qa_counts)
+            
+            print(colored("\nSummary:", 'cyan', attrs=['bold']))
+            print(colored(f"Seed Examples: {len(seed_examples)} | "
+                         f"Q&A Pairs: {total_qa} total (min: {min_qa}, max: {max_qa}, avg: {avg_qa:.1f})", 
+                         'cyan'))
 
     print(colored("\nAnalysis complete.", 'green'))
+
+def _print_overall_summary(stats: Dict[str, Any]) -> None:
+    """Print overall summary statistics for multiple files."""
+    if stats['files_analyzed'] == 0:
+        return
+    
+    print(colored("\n" + "="*70, 'blue', attrs=['bold']))
+    print(colored("OVERALL SUMMARY", 'blue', attrs=['bold']))
+    print(colored("="*70, 'blue', attrs=['bold']))
+    
+    # Calculate averages and ranges
+    avg_seeds = stats['total_seed_examples'] / stats['files_analyzed'] if stats['files_analyzed'] > 0 else 0
+    avg_qa_total = stats['total_qa_pairs'] / stats['files_analyzed'] if stats['files_analyzed'] > 0 else 0
+    
+    if stats['qa_pair_counts']:
+        min_qa = min(stats['qa_pair_counts'])
+        max_qa = max(stats['qa_pair_counts'])
+        avg_qa = sum(stats['qa_pair_counts']) / len(stats['qa_pair_counts'])
+    else:
+        min_qa = max_qa = avg_qa = 0
+    
+    print(colored(f"Files Analyzed: {stats['files_analyzed']}", 'white'))
+    print(colored(f"Files with Violations: {stats['files_with_violations']}", 
+                  'red' if stats['files_with_violations'] > 0 else 'green'))
+    print(colored(f"Total Seed Examples: {stats['total_seed_examples']} (avg: {avg_seeds:.1f} per file)", 'white'))
+    print(colored(f"Total Q&A Pairs: {stats['total_qa_pairs']} (avg: {avg_qa_total:.1f} per file)", 'white'))
+    
+    if stats['qa_pair_counts']:
+        print(colored(f"Q&A Pairs per Section: min: {min_qa}, max: {max_qa}, avg: {avg_qa:.1f}", 'white'))
+    
+    if stats['total_violations'] > 0:
+        print(colored(f"Total Violations: {stats['total_violations']} seed examples with < 3 Q&A pairs", 'yellow'))
+    
+    # Critical Errors Section (Schema & YAML Lint)
+    print(colored("\n" + "-"*70, 'red'))
+    print(colored("CRITICAL ERRORS (Will block next stage):", 'red', attrs=['bold']))
+    print(colored("-"*70, 'red'))
+    
+    # Schema Violations
+    schema_errors = stats.get('schema_violations', 0)
+    if schema_errors > 0:
+        print(colored(f"Schema Violations: {schema_errors} file{'s' if schema_errors > 1 else ''} with schema errors", 'red'))
+        if 'schema_violation_files' in stats and stats['schema_violation_files']:
+            print(colored("  Files with schema errors:", 'red'))
+            for file_path in stats['schema_violation_files']:
+                print(colored(f"    • {file_path}", 'red'))
+        if 'schema_error_details' in stats and stats['schema_error_details']:
+            print(colored(f"  Common issues:", 'red'))
+            for error_type, count in stats['schema_error_details'].items():
+                print(colored(f"    - {error_type}: {count} occurrence{'s' if count > 1 else ''}", 'red'))
+    else:
+        print(colored("Schema Violations: None found ✓", 'green'))
+    
+    # YAML Lint Errors
+    yaml_errors = stats.get('yaml_lint_errors', 0)
+    if yaml_errors > 0:
+        print(colored(f"YAML Lint Errors: {yaml_errors} file{'s' if yaml_errors > 1 else ''} with YAML formatting issues", 'red'))
+        if 'yaml_lint_error_files' in stats and stats['yaml_lint_error_files']:
+            print(colored("  Files with YAML lint errors:", 'red'))
+            for file_path in stats['yaml_lint_error_files']:
+                print(colored(f"    • {file_path}", 'red'))
+        if 'yaml_error_details' in stats and stats['yaml_error_details']:
+            print(colored(f"  Common issues:", 'red'))
+            for error_type, count in stats['yaml_error_details'].items():
+                print(colored(f"    - {error_type}: {count} occurrence{'s' if count > 1 else ''}", 'red'))
+    else:
+        print(colored("YAML Lint Errors: None found ✓", 'green'))
+    
+    print(colored("="*70, 'blue', attrs=['bold']))
+
+def _calculate_overall_summary(results: List[dict]) -> Dict[str, Any]:
+    """Calculate overall summary statistics from a list of file analysis results."""
+    if not results:
+        return None
+    
+    stats = {
+        'files_analyzed': 0,
+        'total_seed_examples': 0,
+        'total_qa_pairs': 0,
+        'files_with_violations': 0,
+        'total_violations': 0,
+        'qa_pair_counts': [],
+        'schema_violations': 0,
+        'schema_error_details': {},
+        'schema_violation_files': [],
+        'yaml_lint_errors': 0,
+        'yaml_error_details': {},
+        'yaml_lint_error_files': []
+    }
+    
+    for result in results:
+        if 'summary' in result:
+            stats['files_analyzed'] += 1
+            summary = result['summary']
+            stats['total_seed_examples'] += summary['seed_examples']
+            stats['total_qa_pairs'] += summary['total_qa_pairs']
+            
+            # Count files with violations
+            if not result.get('ok', True):
+                stats['files_with_violations'] += 1
+            
+            # Track schema violations and YAML lint errors
+            # Check for schema errors in the nested structure
+            if 'schema' in result and 'errors' in result['schema'] and result['schema']['errors']:
+                stats['schema_violations'] += 1
+                # Track the file with schema violations
+                if 'file' in result:
+                    stats['schema_violation_files'].append(result['file'])
+                for error in result['schema']['errors']:
+                    msg = error.get('message', '')
+                    if 'too short' in msg or 'minimum required' in msg:
+                        stats['schema_error_details']['too few items'] = stats['schema_error_details'].get('too few items', 0) + 1
+                    elif 'required' in msg.lower() and 'missing' in msg.lower():
+                        stats['schema_error_details']['missing required property'] = stats['schema_error_details'].get('missing required property', 0) + 1
+                    elif 'should be non-empty' in msg:
+                        stats['schema_error_details']['empty required field'] = stats['schema_error_details'].get('empty required field', 0) + 1
+                    else:
+                        stats['schema_error_details']['other schema errors'] = stats['schema_error_details'].get('other schema errors', 0) + 1
+            
+            # Also check the top-level errors field for other error types
+            if 'errors' in result and result['errors']:
+                has_yaml_error = False
+                
+                for error in result['errors']:
+                    if 'YAML lint' in error:
+                        has_yaml_error = True
+                        # Categorize YAML lint errors
+                        stats['yaml_error_details']['formatting issues'] = stats['yaml_error_details'].get('formatting issues', 0) + 1
+                
+                if has_yaml_error:
+                    stats['yaml_lint_errors'] += 1
+            
+            # Check yaml_lint field if present
+            if 'yaml_lint' in result and result['yaml_lint'] and 'errors' in result['yaml_lint']:
+                if result['yaml_lint']['errors']:
+                    if 'file' in result and result['file'] not in stats['yaml_lint_error_files']:
+                        stats['yaml_lint_error_files'].append(result['file'])
+                        stats['yaml_lint_errors'] += 1
+                    for error in result['yaml_lint']['errors']:
+                        # Categorize YAML lint error types
+                        if 'trailing spaces' in error.lower():
+                            stats['yaml_error_details']['trailing spaces'] = stats['yaml_error_details'].get('trailing spaces', 0) + 1
+                        elif 'crlf' in error.lower():
+                            stats['yaml_error_details']['CRLF line endings'] = stats['yaml_error_details'].get('CRLF line endings', 0) + 1
+                        elif 'tabs' in error.lower():
+                            stats['yaml_error_details']['tabs instead of spaces'] = stats['yaml_error_details'].get('tabs instead of spaces', 0) + 1
+                        elif 'duplicate' in error.lower():
+                            stats['yaml_error_details']['duplicate keys'] = stats['yaml_error_details'].get('duplicate keys', 0) + 1
+                        else:
+                            stats['yaml_error_details']['other formatting issues'] = stats['yaml_error_details'].get('other formatting issues', 0) + 1
+            
+            # Count violations (Q&A pairs < 3)
+            if 'examples' in result:
+                for ex in result['examples']:
+                    if 'pairs' in ex:
+                        qa_count = len(ex['pairs'])
+                        stats['qa_pair_counts'].append(qa_count)
+                        if qa_count < 3:
+                            stats['total_violations'] += 1
+            
+            # Also use summary data for Q&A counts
+            if 'summary' in result:
+                summary = result['summary']
+                min_qa = summary.get('min_qa_pairs', 0)
+                if min_qa > 0 and min_qa not in stats['qa_pair_counts']:
+                    stats['qa_pair_counts'].append(min_qa)
+                max_qa = summary.get('max_qa_pairs', 0)
+                if max_qa > 0 and max_qa not in stats['qa_pair_counts']:
+                    stats['qa_pair_counts'].append(max_qa)
+    
+    if stats['files_analyzed'] == 0:
+        return None
+    
+    # Calculate averages
+    avg_seeds = stats['total_seed_examples'] / stats['files_analyzed']
+    avg_qa_total = stats['total_qa_pairs'] / stats['files_analyzed']
+    
+    if stats['qa_pair_counts']:
+        min_qa = min(stats['qa_pair_counts'])
+        max_qa = max(stats['qa_pair_counts'])
+        avg_qa = sum(stats['qa_pair_counts']) / len(stats['qa_pair_counts'])
+    else:
+        min_qa = max_qa = avg_qa = 0
+    
+    return {
+        "files_analyzed": stats['files_analyzed'],
+        "files_with_violations": stats['files_with_violations'],
+        "total_seed_examples": stats['total_seed_examples'],
+        "avg_seed_examples_per_file": round(avg_seeds, 1),
+        "total_qa_pairs": stats['total_qa_pairs'],
+        "avg_qa_pairs_per_file": round(avg_qa_total, 1),
+        "qa_pairs_per_section": {
+            "min": min_qa,
+            "max": max_qa,
+            "avg": round(avg_qa, 1)
+        },
+        "total_violations": stats['total_violations'],
+        "critical_errors": {
+            "schema_violations": {
+                "count": stats['schema_violations'],
+                "files": stats['schema_violation_files'],
+                "details": stats['schema_error_details'] if stats['schema_error_details'] else None
+            },
+            "yaml_lint_errors": {
+                "count": stats['yaml_lint_errors'],
+                "files": stats['yaml_lint_error_files'],
+                "details": stats['yaml_error_details'] if stats['yaml_error_details'] else None
+            }
+        }
+    }
 
 def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> None:
     """Find and analyze all .yaml/.yml files within a directory (recursively)."""
@@ -587,9 +817,57 @@ def analyze_qna_dir(dir_path: str, thresholds: Optional[Dict[str, Any]] = None, 
         print(colored(f"No YAML files found in '{dir_path}'.", 'yellow'))
         return
 
+    # Collect statistics for overall summary
+    overall_stats = {
+        'files_analyzed': 0,
+        'total_seed_examples': 0,
+        'total_qa_pairs': 0,
+        'files_with_violations': 0,
+        'total_violations': 0,
+        'qa_pair_counts': [],
+        'schema_violations': 0,
+        'schema_error_details': {},
+        'yaml_lint_errors': 0,
+        'yaml_error_details': {}
+    }
+
+    # To collect schema and lint errors, we'll also run the AI analysis internally
+    ai_results = []
+    
     for file_path in sorted(yaml_files):
         print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
+        
+        # Get AI analysis results for error tracking
+        ai_result = analyze_qna_file_ai(file_path, source_doc_text=source_doc_text, yaml_lint=yaml_lint, schema_type=schema_type)
+        ai_results.append(ai_result)
+        
+        # Display human-readable analysis
         analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint, schema_type=schema_type)
+    
+    # Calculate overall summary from AI results
+    summary_stats = _calculate_overall_summary(ai_results)
+    if summary_stats:
+        # Convert the dictionary format to the format expected by _print_overall_summary
+        overall_stats = {
+            'files_analyzed': summary_stats['files_analyzed'],
+            'total_seed_examples': summary_stats['total_seed_examples'],
+            'total_qa_pairs': summary_stats['total_qa_pairs'],
+            'files_with_violations': summary_stats['files_with_violations'],
+            'total_violations': summary_stats['total_violations'],
+            'qa_pair_counts': [],  # Already calculated in summary_stats
+            'schema_violations': summary_stats['critical_errors']['schema_violations']['count'],
+            'schema_error_details': summary_stats['critical_errors']['schema_violations']['details'] or {},
+            'schema_violation_files': summary_stats['critical_errors']['schema_violations']['files'],
+            'yaml_lint_errors': summary_stats['critical_errors']['yaml_lint_errors']['count'],
+            'yaml_error_details': summary_stats['critical_errors']['yaml_lint_errors']['details'] or {},
+            'yaml_lint_error_files': summary_stats['critical_errors']['yaml_lint_errors']['files']
+        }
+        # Add Q&A pair counts for display
+        if 'qa_pairs_per_section' in summary_stats:
+            overall_stats['qa_pair_counts'] = [summary_stats['qa_pairs_per_section']['min'], summary_stats['qa_pairs_per_section']['max']]
+    
+    # Display overall summary
+    _print_overall_summary(overall_stats)
 
 def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] = None, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> None:
     """Crawl a taxonomy tree and analyze files named exactly 'qna.yaml'."""
@@ -607,9 +885,57 @@ def analyze_taxonomy_root(root_path: str, thresholds: Optional[Dict[str, Any]] =
         print(colored(f"No 'qna.yaml' files found under '{root_path}'.", 'yellow'))
         return
 
+    # Collect statistics for overall summary
+    overall_stats = {
+        'files_analyzed': 0,
+        'total_seed_examples': 0,
+        'total_qa_pairs': 0,
+        'files_with_violations': 0,
+        'total_violations': 0,
+        'qa_pair_counts': [],
+        'schema_violations': 0,
+        'schema_error_details': {},
+        'yaml_lint_errors': 0,
+        'yaml_error_details': {}
+    }
+
+    # To collect schema and lint errors, we'll also run the AI analysis internally
+    ai_results = []
+    
     for file_path in sorted(qna_files):
         print(colored(f"\n=== Analyzing: {file_path} ===", 'blue', attrs=['bold']))
+        
+        # Get AI analysis results for error tracking
+        ai_result = analyze_qna_file_ai(file_path, source_doc_text=source_doc_text, yaml_lint=yaml_lint, schema_type=schema_type)
+        ai_results.append(ai_result)
+        
+        # Display human-readable analysis
         analyze_qna_file(file_path, source_doc_text=source_doc_text, thresholds=thresholds, yaml_lint=yaml_lint, schema_type=schema_type)
+    
+    # Calculate overall summary from AI results
+    summary_stats = _calculate_overall_summary(ai_results)
+    if summary_stats:
+        # Convert the dictionary format to the format expected by _print_overall_summary
+        overall_stats = {
+            'files_analyzed': summary_stats['files_analyzed'],
+            'total_seed_examples': summary_stats['total_seed_examples'],
+            'total_qa_pairs': summary_stats['total_qa_pairs'],
+            'files_with_violations': summary_stats['files_with_violations'],
+            'total_violations': summary_stats['total_violations'],
+            'qa_pair_counts': [],  # Already calculated in summary_stats
+            'schema_violations': summary_stats['critical_errors']['schema_violations']['count'],
+            'schema_error_details': summary_stats['critical_errors']['schema_violations']['details'] or {},
+            'schema_violation_files': summary_stats['critical_errors']['schema_violations']['files'],
+            'yaml_lint_errors': summary_stats['critical_errors']['yaml_lint_errors']['count'],
+            'yaml_error_details': summary_stats['critical_errors']['yaml_lint_errors']['details'] or {},
+            'yaml_lint_error_files': summary_stats['critical_errors']['yaml_lint_errors']['files']
+        }
+        # Add Q&A pair counts for display
+        if 'qa_pairs_per_section' in summary_stats:
+            overall_stats['qa_pair_counts'] = [summary_stats['qa_pairs_per_section']['min'], summary_stats['qa_pairs_per_section']['max']]
+    
+    # Display overall summary
+    _print_overall_summary(overall_stats)
 
 def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> dict:
     """Analyze a qna.yaml file and return a machine-readable JSON-ready structure."""
@@ -647,6 +973,8 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
 
     # Schema v3 validation for AI output as well
     schema_info = {}
+    validation_errors = []
+    
     try:
         # Load and validate against specified schema type
         schema_dict, schema_src, base_uri, store_version, schema_attempts = _load_schema(schema_type)
@@ -656,61 +984,66 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
                 validator_cls.check_schema(schema_dict)
                 # Since we've inlined the version reference, we don't need a resolver
                 validator = validator_cls(schema_dict)
-                validator.validate(content)
+                
+                # Collect ALL validation errors, not just the first one
+                for ve in validator.iter_errors(content):
+                    prop_path = ".".join([str(p) for p in list(ve.path)])
+                    
+                    # Create a more user-friendly error message
+                    if "is too short" in ve.message:
+                        path_parts = list(ve.path)
+                        if len(path_parts) >= 2 and path_parts[0] == 'seed_examples':
+                            seed_idx = path_parts[1]
+                            if len(path_parts) >= 3 and path_parts[2] == 'questions_and_answers':
+                                try:
+                                    qa_count = len(content['seed_examples'][seed_idx]['questions_and_answers'])
+                                    error_msg = f"Seed example {seed_idx + 1} has only {qa_count} Q&A pair{'s' if qa_count != 1 else ''} (minimum required: 3)"
+                                except (KeyError, IndexError, TypeError):
+                                    error_msg = f"Seed example {seed_idx + 1}: questions_and_answers array is too short (minimum: 3 Q&A pairs)"
+                            else:
+                                try:
+                                    example_count = len(content['seed_examples'])
+                                    error_msg = f"Only {example_count} seed examples provided (minimum required: 5)"
+                                except (KeyError, IndexError, TypeError):
+                                    error_msg = f"Not enough seed examples (minimum required: 5)"
+                        elif prop_path == 'seed_examples':
+                            # The seed_examples array itself is too short
+                            try:
+                                example_count = len(content.get('seed_examples', []))
+                                error_msg = f"Only {example_count} seed example(s) provided (minimum required: 5)"
+                            except (KeyError, TypeError):
+                                error_msg = "Not enough seed examples (minimum required: 5)"
+                        else:
+                            error_msg = f"Field '{prop_path}' has too few items"
+                    elif "is a required property" in ve.message:
+                        missing_prop = ve.message.split("'")[1] if "'" in ve.message else ve.message
+                        error_msg = f"Missing required field: '{missing_prop}'"
+                        if prop_path:
+                            error_msg = f"At '{prop_path}': {error_msg}"
+                    else:
+                        error_msg = ve.message
+                        if len(error_msg) > 200 and "[{" in error_msg:
+                            error_msg = error_msg.split(" is ")[0] if " is " in error_msg else error_msg[:100] + "..."
+                    
+                    validation_errors.append({
+                        "path": prop_path or "<root>",
+                        "message": error_msg
+                    })
+                    
             except Exception as inner_e:
-                raise inner_e
-            schema_info = {"validated_against": f"v3/{schema_type}.json", "source": schema_src, "errors": [], "attempts": schema_attempts}
+                validation_errors.append({
+                    "path": "<validation>",
+                    "message": str(inner_e)
+                })
+            
+            schema_info = {
+                "validated_against": f"v3/{schema_type}.json", 
+                "source": schema_src, 
+                "errors": validation_errors, 
+                "attempts": schema_attempts
+            }
         else:
             schema_info = {"validated_against": None, "source": None, "errors": [], "attempts": schema_attempts}
-    except jsonschema.exceptions.ValidationError as ve:
-        prop_path = ".".join([str(p) for p in list(ve.path)])
-        
-        # Create a more user-friendly error message (same logic as above)
-        if "is too short" in ve.message:
-            path_parts = list(ve.path)
-            if len(path_parts) >= 2 and path_parts[0] == 'seed_examples':
-                seed_idx = path_parts[1]
-                if len(path_parts) >= 3 and path_parts[2] == 'questions_and_answers':
-                    try:
-                        qa_count = len(content['seed_examples'][seed_idx]['questions_and_answers'])
-                        error_msg = f"Seed example {seed_idx + 1} has only {qa_count} Q&A pairs (minimum required: 3)"
-                    except (KeyError, IndexError, TypeError):
-                        error_msg = f"Seed example {seed_idx + 1}: questions_and_answers array is too short (minimum: 3 Q&A pairs)"
-                else:
-                    try:
-                        example_count = len(content['seed_examples'])
-                        error_msg = f"Only {example_count} seed examples provided (minimum required: 5)"
-                    except (KeyError, IndexError, TypeError):
-                        error_msg = f"Not enough seed examples (minimum required: 5)"
-            elif prop_path == 'seed_examples':
-                # The seed_examples array itself is too short
-                try:
-                    example_count = len(content.get('seed_examples', []))
-                    error_msg = f"Only {example_count} seed example(s) provided (minimum required: 5)"
-                except (KeyError, TypeError):
-                    error_msg = "Not enough seed examples (minimum required: 5)"
-            else:
-                error_msg = f"Field '{prop_path}' has too few items"
-        elif "is a required property" in ve.message:
-            missing_prop = ve.message.split("'")[1] if "'" in ve.message else ve.message
-            error_msg = f"Missing required field: '{missing_prop}'"
-            if prop_path:
-                error_msg = f"At '{prop_path}': {error_msg}"
-        else:
-            error_msg = ve.message
-            if len(error_msg) > 200 and "[{" in error_msg:
-                error_msg = error_msg.split(" is ")[0] if " is " in error_msg else error_msg[:100] + "..."
-        
-        schema_info = {
-            "validated_against": "v3/knowledge.json",
-            "source": None,
-            "errors": [
-                {
-                    "path": prop_path or "<root>",
-                    "message": error_msg
-                }
-            ]
-        }
     except Exception:
         schema_info = {"validated_against": None, "source": None, "errors": []}
 
@@ -895,21 +1228,46 @@ def analyze_qna_file_ai(file_path: str, source_doc_text: Optional[str] = None, y
     except Exception:
         pass
 
+    # Add summary statistics
+    if seed_examples:
+        qa_counts = []
+        for example in seed_examples:
+            qa_list = example.get('questions_and_answers', [])
+            if isinstance(qa_list, list):
+                qa_counts.append(len(qa_list))
+        
+        if qa_counts:
+            total_qa = sum(qa_counts)
+            avg_qa = total_qa / len(qa_counts)
+            min_qa = min(qa_counts)
+            max_qa = max(qa_counts)
+            
+            result["summary"] = {
+                "seed_examples": len(seed_examples),
+                "total_qa_pairs": total_qa,
+                "min_qa_pairs": min_qa,
+                "max_qa_pairs": max_qa,
+                "avg_qa_pairs": round(avg_qa, 1)
+            }
+    
     if yaml_lint:
         result["yaml_lint"] = lint_yaml_file(file_path)
 
     return result
 
-def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> List[dict]:
+def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> Dict[str, Any]:
     if not os.path.isdir(dir_path):
-        return [{
-            "file": dir_path,
-            "ok": False,
-            "errors": [f"Directory not found: {dir_path}"],
-            "seed_examples_count": 0,
-            "constraints": {"num_examples_recommended": {"min": 5, "max": 15, "ok": False}},
-            "examples": []
-        }]
+        return {
+            "files": [{
+                "file": dir_path,
+                "ok": False,
+                "errors": [f"Directory not found: {dir_path}"],
+                "seed_examples_count": 0,
+                "constraints": {"num_examples_recommended": {"min": 5, "max": 15, "ok": False}},
+                "examples": []
+            }],
+            "overall_summary": None
+        }
 
     yaml_files: List[str] = []
     for root, _dirs, files in os.walk(dir_path):
@@ -917,18 +1275,30 @@ def analyze_qna_dir_ai(dir_path: str, source_doc_text: Optional[str] = None, yam
             if name.lower().endswith((".yaml", ".yml")):
                 yaml_files.append(os.path.join(root, name))
 
-    return [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint, schema_type=schema_type) for p in sorted(yaml_files)]
+    # Analyze all files
+    results = [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint, schema_type=schema_type) for p in sorted(yaml_files)]
+    
+    # Calculate overall summary
+    overall_summary = _calculate_overall_summary(results)
+    
+    return {
+        "files": results,
+        "overall_summary": overall_summary
+    }
 
-def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> List[dict]:
+def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = None, yaml_lint: bool = False, schema_type: str = 'knowledge') -> Dict[str, Any]:
     if not os.path.isdir(root_path):
-        return [{
-            "file": root_path,
-            "ok": False,
-            "errors": [f"Directory not found: {root_path}"],
-            "seed_examples_count": 0,
-            "constraints": {"num_examples_recommended": {"min": 5, "max": 15, "ok": False}},
-            "examples": []
-        }]
+        return {
+            "files": [{
+                "file": root_path,
+                "ok": False,
+                "errors": [f"Directory not found: {root_path}"],
+                "seed_examples_count": 0,
+                "constraints": {"num_examples_recommended": {"min": 5, "max": 15, "ok": False}},
+                "examples": []
+            }],
+            "overall_summary": None
+        }
 
     qna_files: List[str] = []
     for current_root, _dirs, files in os.walk(root_path):
@@ -936,7 +1306,16 @@ def analyze_taxonomy_root_ai(root_path: str, source_doc_text: Optional[str] = No
             if name == "qna.yaml":
                 qna_files.append(os.path.join(current_root, name))
 
-    return [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint) for p in sorted(qna_files)]
+    # Analyze all files
+    results = [analyze_qna_file_ai(p, source_doc_text, yaml_lint=yaml_lint, schema_type=schema_type) for p in sorted(qna_files)]
+    
+    # Calculate overall summary
+    overall_summary = _calculate_overall_summary(results)
+    
+    return {
+        "files": results,
+        "overall_summary": overall_summary
+    }
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze Q&A YAML files and report token counts and structure quality.")
